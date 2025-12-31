@@ -219,13 +219,112 @@ test_user
 - Requires cleanup between tests
 - Risk of test pollution
 
+## Test Public Behavior, Not Implementation
+
+### Core Principle
+
+**Unit tests should only validate public behavior and the contract of a unit—not its internal implementation.**
+
+The objective is to verify that the contract (inputs → outputs, preconditions → postconditions) is respected, not how the code achieves it internally.
+
+### Why This Matters
+
+| Testing Implementation | Testing Public Behavior |
+|------------------------|-------------------------|
+| Tests break when refactoring internals | Tests only break when behavior changes |
+| High maintenance cost | Low maintenance cost |
+| Tests tightly coupled to code | Tests coupled to contracts |
+| Refactoring requires test rewrites | Refactoring is safe and fast |
+| Tests document "how" | Tests document "what" |
+
+### What to Test
+
+✅ **Test (Public Behavior)**:
+- Public method inputs and outputs
+- Return values for given inputs
+- Side effects that are part of the contract (e.g., events emitted, state changes visible via public API)
+- Error conditions and exceptions thrown
+- Edge cases in the documented behavior
+
+❌ **Avoid Testing (Implementation Details)**:
+- Private/internal methods directly
+- The order of internal method calls
+- Internal data structures
+- Which helper functions are used
+- How many times an internal method is called
+- Internal state that isn't exposed
+
+### Example
+
+```
+# ❌ BAD: Tests implementation details
+def test_user_service_calls_validator_then_repository():
+    service.create_user(email="test@example.com")
+    # Verifying internal call order - brittle!
+    mock_validator.validate.assert_called_before(mock_repo.save)
+    assert mock_repo.save.call_count == 1
+
+# ✅ GOOD: Tests public contract
+def test_create_user_returns_user_with_valid_email():
+    result = service.create_user(email="test@example.com")
+    assert result.email == "test@example.com"
+    assert result.id is not None
+
+def test_create_user_raises_when_email_invalid():
+    with pytest.raises(ValidationError):
+        service.create_user(email="invalid")
+```
+
+### Signs You're Testing Implementation
+
+1. **Test names describe "how"** instead of "what"
+2. **Tests break after refactoring** even though behavior is unchanged
+3. **Mocking internal collaborators** instead of boundary interfaces
+4. **Verifying call counts** on internal methods
+5. **Testing private methods directly** (accessing `_private_method`)
+
+### Refactoring Safety Test
+
+> If you can refactor the internal implementation without changing the public API, 
+> and your tests still pass, you're testing behavior correctly.
+>
+> If your tests break during a pure refactor, you're testing implementation.
+
+### Contract-Based Testing
+
+Focus tests on the contract:
+- **Preconditions**: What inputs are valid?
+- **Postconditions**: What outputs are guaranteed?
+- **Invariants**: What always remains true?
+
+```
+def test_contract_withdraw_reduces_balance():
+    # Precondition: account has sufficient balance
+    account = Account(balance=100)
+    
+    # Action
+    account.withdraw(30)
+    
+    # Postcondition: balance reduced by withdrawal amount
+    assert account.balance == 70
+
+def test_contract_withdraw_rejects_overdraft():
+    # Precondition: account has insufficient balance
+    account = Account(balance=50)
+    
+    # Postcondition: raises error, balance unchanged
+    with pytest.raises(InsufficientFundsError):
+        account.withdraw(100)
+    assert account.balance == 50  # Invariant: balance unchanged on failure
+```
+
 ## Best Practices Summary
 
 1. **Fast feedback**: Unit tests should run in milliseconds
 2. **Isolated tests**: No dependencies between tests
 3. **Readable tests**: Tests document expected behavior
 4. **One reason to fail**: Each test verifies one thing
-5. **Test behavior**: Not implementation details
+5. **Test public behavior only**: Verify contracts, not implementation
 6. **Use fixtures**: Share setup, reduce duplication
 7. **Mock at boundaries**: Interfaces, not internals
 8. **Deterministic**: Same input → same output

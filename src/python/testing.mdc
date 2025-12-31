@@ -402,15 +402,125 @@ exclude_lines = [
 ]
 ```
 
+## Test Public Behavior, Not Implementation
+
+### Core Principle
+
+**Unit tests must only validate the public contract of a unit—not its internal implementation.**
+
+Testing implementation details creates brittle tests that break during refactoring, adding maintenance cost for no benefit.
+
+### What This Means in Practice
+
+```python
+# ❌ BAD: Testing implementation details
+class TestUserService:
+    def test_create_user_calls_internal_methods(
+        self,
+        service: UserService,
+        mock_repo: Mock,
+    ) -> None:
+        service.create_user(email="test@example.com", name="Test")
+        
+        # Brittle: verifying internal call order and counts
+        mock_repo._prepare_user.assert_called_once()
+        mock_repo._validate_uniqueness.assert_called_before(mock_repo.save)
+        assert mock_repo.save.call_count == 1
+
+
+# ✅ GOOD: Testing public contract
+class TestUserService:
+    def test_create_user_returns_user_with_correct_data(
+        self,
+        service: UserService,
+        mock_repo: Mock,
+    ) -> None:
+        mock_repo.save.return_value = User(
+            id=uuid4(),
+            email="test@example.com",
+            name="Test",
+        )
+        
+        result = service.create_user(email="test@example.com", name="Test")
+        
+        # Verify the contract: correct output for given input
+        assert result.email.value == "test@example.com"
+        assert result.name.value == "Test"
+        assert result.id is not None
+
+    def test_create_user_raises_when_email_exists(
+        self,
+        service: UserService,
+        mock_repo: Mock,
+    ) -> None:
+        mock_repo.find_by_email.return_value = Mock()  # Email exists
+        
+        # Verify the contract: raises specific error
+        with pytest.raises(ValueError, match="Email already exists"):
+            service.create_user(email="existing@example.com", name="Test")
+```
+
+### Rules for Contract-Based Testing
+
+| Test This (Public Contract) | Avoid Testing (Implementation) |
+|-----------------------------|-------------------------------|
+| Return values | Private method calls |
+| Raised exceptions | Internal call order |
+| Public side effects | Call counts on internals |
+| Input validation | How validation is done |
+| Output format | Which helpers are used |
+
+### Identifying Implementation Coupling
+
+Signs your tests are coupled to implementation:
+
+```python
+# 🚩 Red flags in test code:
+
+# Testing private methods directly
+service._internal_validate(data)  # Don't do this
+
+# Verifying internal call sequences
+mock._step_one.assert_called_before(mock._step_two)
+
+# Checking how many times internals are called
+assert mock._helper.call_count == 3
+
+# Mocking internal collaborators instead of ports
+@patch.object(UserService, '_hash_password')  # Don't mock internals
+```
+
+### The Refactoring Test
+
+> **If you refactor internal code without changing the public API, 
+> your tests should still pass.**
+>
+> If tests break during a pure refactor, they're testing implementation—fix them.
+
+### Mock at Boundaries Only
+
+```python
+# ✅ GOOD: Mock the port (boundary interface)
+@pytest.fixture
+def mock_user_repo() -> Mock:
+    return Mock(spec=UserRepositoryPort)
+
+# ❌ BAD: Mock internal implementation details
+@pytest.fixture
+def mock_password_hasher() -> Mock:
+    return Mock(spec=_InternalPasswordHasher)  # Internal class
+```
+
 ## Best Practices Summary
 
 1. **Arrange-Act-Assert**: Structure tests clearly with AAA pattern
 2. **One assertion per test**: Keep tests focused and readable
-3. **Test behavior, not implementation**: Focus on what, not how
-4. **Use fixtures**: Share setup code, avoid duplication
-5. **Mock at boundaries**: Mock ports/interfaces, not internal classes
-6. **Fast unit tests**: Domain and application tests should be instant
-7. **Isolated tests**: Each test should be independent
-8. **Descriptive names**: `test_creates_user_when_email_is_valid`
-9. **Type annotations**: Always type test functions and fixtures
-10. **Clean Architecture**: Test each layer appropriately
+3. **Test public contracts only**: Verify inputs → outputs, not how it's done internally
+4. **Avoid implementation coupling**: Tests shouldn't break when refactoring internals
+5. **Use fixtures**: Share setup code, avoid duplication
+6. **Mock at boundaries**: Mock ports/interfaces, not internal classes
+7. **Fast unit tests**: Domain and application tests should be instant
+8. **Isolated tests**: Each test should be independent
+9. **Descriptive names**: `test_creates_user_when_email_is_valid`
+10. **Type annotations**: Always type test functions and fixtures
+11. **Clean Architecture**: Test each layer appropriately
