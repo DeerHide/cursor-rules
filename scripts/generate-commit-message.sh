@@ -55,6 +55,7 @@ import sys
 import re
 import subprocess
 import base64
+from collections import Counter
 
 # Decode diff stats and content
 try:
@@ -66,7 +67,8 @@ except:
     diff_content = ""
 
 # Analyze changes
-files_changed = len([line for line in diff_stat.split('\n') if line.strip() and '|' in line])
+files_changed = [line for line in diff_stat.split('\n') if line.strip() and '|' in line]
+file_paths = [line.split()[0] for line in files_changed if line.split()[0]]
 additions = 0
 deletions = 0
 
@@ -79,44 +81,207 @@ for line in diff_stat.split('\n'):
         if match:
             deletions += int(match.group(1))
 
-# Determine commit type and scope
+# Extract file information
+def extract_file_info(file_paths):
+    """Extract scope and context from file paths"""
+    scopes = []
+    file_types = []
+    
+    for path in file_paths:
+        # Extract directory scope
+        if '/' in path:
+            parts = path.split('/')
+            # Skip common prefixes
+            if parts[0] not in ['src', 'lib', 'app', 'test', 'tests', 'spec', 'specs']:
+                scopes.append(parts[0])
+            elif len(parts) > 1:
+                scopes.append(parts[1])
+        
+        # Extract file type
+        if '.' in path:
+            ext = path.split('.')[-1]
+            if ext in ['py', 'ts', 'js', 'tsx', 'jsx', 'java', 'go', 'rs', 'rb']:
+                file_types.append(ext)
+    
+    # Get most common scope
+    scope = Counter(scopes).most_common(1)[0][0] if scopes else ""
+    return scope, file_types
+
+# Analyze code changes for context
+def analyze_code_changes(diff_content):
+    """Extract meaningful context from code changes"""
+    context = {
+        'functions_added': [],
+        'functions_modified': [],
+        'classes_added': [],
+        'imports_added': [],
+        'keywords': []
+    }
+    
+    lines = diff_content.split('\n')
+    current_file = ""
+    
+    for i, line in enumerate(lines):
+        # Track file changes
+        if line.startswith('+++ b/') or line.startswith('--- a/'):
+            current_file = line.split('/')[-1] if '/' in line else ""
+        
+        # Detect new functions/methods
+        if line.startswith('+') and not line.startswith('+++'):
+            stripped = line[1:].strip()
+            
+            # Python functions
+            if re.match(r'^\s*def\s+\w+', stripped):
+                func_match = re.search(r'def\s+(\w+)', stripped)
+                if func_match:
+                    context['functions_added'].append(func_match.group(1))
+            
+            # Python classes
+            if re.match(r'^\s*class\s+\w+', stripped):
+                class_match = re.search(r'class\s+(\w+)', stripped)
+                if class_match:
+                    context['classes_added'].append(class_match.group(1))
+            
+            # JavaScript/TypeScript functions
+            if re.match(r'^\s*(export\s+)?(async\s+)?function\s+\w+', stripped):
+                func_match = re.search(r'function\s+(\w+)', stripped)
+                if func_match:
+                    context['functions_added'].append(func_match.group(1))
+            
+            # Arrow functions (const/let name = ...)
+            if re.match(r'^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(\([^)]*\)\s*)?=>', stripped):
+                var_match = re.search(r'(const|let)\s+(\w+)', stripped)
+                if var_match:
+                    context['functions_added'].append(var_match.group(2))
+            
+            # Detect imports
+            if re.match(r'^\s*import\s+', stripped) or re.match(r'^\s*from\s+', stripped):
+                import_match = re.search(r'import\s+.*?\s+from\s+['"]([^'"]+)['"]', stripped)
+                if not import_match:
+                    import_match = re.search(r'from\s+['"]([^'"]+)['"]', stripped)
+                if import_match:
+                    context['imports_added'].append(import_match.group(1).split('/')[-1])
+        
+        # Detect modified functions (function name appears in both + and -)
+        if line.startswith('+') and 'def ' in line:
+            func_match = re.search(r'def\s+(\w+)', line)
+            if func_match:
+                func_name = func_match.group(1)
+                # Check if this function was also removed
+                for j, other_line in enumerate(lines[max(0, i-10):i+10]):
+                    if other_line.startswith('-') and f'def {func_name}' in other_line:
+                        if func_name not in context['functions_modified']:
+                            context['functions_modified'].append(func_name)
+                        break
+    
+    # Extract keywords from diff
+    keywords = ['error', 'exception', 'fix', 'bug', 'test', 'validate', 'auth', 'security', 
+                'config', 'setup', 'init', 'refactor', 'optimize', 'performance', 'api', 'endpoint']
+    for keyword in keywords:
+        if keyword in diff_content.lower():
+            context['keywords'].append(keyword)
+    
+    return context
+
+# Determine commit type
 commit_type = "chore"
 scope = ""
-description = ""
+description_parts = []
 
-# Check file patterns
-if any(f in diff_stat for f in ['test', 'spec', '__tests__']):
+# Analyze file patterns for type detection
+test_files = any('test' in f.lower() or 'spec' in f.lower() for f in file_paths)
+doc_files = any('.md' in f or 'docs' in f.lower() or 'readme' in f.lower() for f in file_paths)
+config_files = any(f.endswith(('.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.env')) for f in file_paths)
+
+if test_files:
     commit_type = "test"
-elif any(f in diff_stat for f in ['.md', 'docs/', 'README']):
+elif doc_files:
     commit_type = "docs"
-elif 'fix' in diff_content.lower() or 'bug' in diff_content.lower() or 'error' in diff_content.lower():
-    commit_type = "fix"
-elif any(word in diff_content.lower() for word in ['add', 'new', 'implement', 'create', 'feature']):
-    commit_type = "feat"
-elif any(word in diff_content.lower() for word in ['refactor', 'restructure', 'reorganize']):
-    commit_type = "refactor"
+elif config_files:
+    commit_type = "chore"
+else:
+    # Analyze code content
+    code_context = analyze_code_changes(diff_content)
+    
+    # Check for bug fixes
+    if any(kw in code_context['keywords'] for kw in ['error', 'exception', 'fix', 'bug']):
+        commit_type = "fix"
+    # Check for new features
+    elif code_context['functions_added'] or code_context['classes_added']:
+        commit_type = "feat"
+    # Check for refactoring
+    elif code_context['functions_modified'] or 'refactor' in code_context['keywords']:
+        commit_type = "refactor"
+    # Check content keywords
+    elif any(word in diff_content.lower() for word in ['add', 'new', 'implement', 'create', 'feature']):
+        commit_type = "feat"
+    elif any(word in diff_content.lower() for word in ['refactor', 'restructure', 'reorganize', 'optimize']):
+        commit_type = "refactor"
 
 # Extract scope from file paths
-if diff_stat:
-    first_file = diff_stat.split('\n')[0].split()[0] if diff_stat.split('\n')[0] else ""
-    if '/' in first_file:
-        scope = first_file.split('/')[0]
-    elif '.' in first_file:
-        scope = first_file.split('.')[-1] if first_file.split('.')[-1] in ['py', 'ts', 'js', 'tsx', 'jsx'] else ""
+scope, file_types = extract_file_info(file_paths)
 
-# Generate description
-if additions > deletions and additions > 10:
-    description = "add new functionality"
-elif deletions > additions and deletions > 10:
-    description = "remove unused code"
-elif 'fix' in diff_content.lower():
-    description = "fix issue"
-elif 'test' in diff_stat.lower():
-    description = "add tests"
-elif 'docs' in diff_stat.lower():
-    description = "update documentation"
+# Build detailed description
+code_context = analyze_code_changes(diff_content)
+
+# Add function/class context
+if code_context['functions_added']:
+    funcs = code_context['functions_added'][:2]  # Limit to 2 most relevant
+    if len(funcs) == 1:
+        description_parts.append(f"add {funcs[0]} function")
+    elif len(funcs) == 2:
+        description_parts.append(f"add {funcs[0]} and {funcs[1]} functions")
+    else:
+        description_parts.append(f"add {len(code_context['functions_added'])} functions")
+
+if code_context['classes_added']:
+    classes = code_context['classes_added'][:1]
+    if classes:
+        description_parts.append(f"add {classes[0]} class")
+
+if code_context['functions_modified']:
+    funcs = code_context['functions_modified'][:1]
+    if funcs:
+        description_parts.append(f"update {funcs[0]} function")
+
+# Add keyword-based context
+if 'error' in code_context['keywords'] or 'exception' in code_context['keywords']:
+    description_parts.append("error handling")
+if 'validate' in code_context['keywords']:
+    description_parts.append("validation")
+if 'auth' in code_context['keywords'] or 'security' in code_context['keywords']:
+    description_parts.append("authentication")
+if 'api' in code_context['keywords'] or 'endpoint' in code_context['keywords']:
+    description_parts.append("API")
+
+# Add file-based context
+if test_files:
+    description_parts.append("test coverage")
+elif doc_files:
+    description_parts.append("documentation")
+elif config_files:
+    description_parts.append("configuration")
+
+# Fallback descriptions based on change patterns
+if not description_parts:
+    if additions > deletions and additions > 20:
+        description_parts.append("implement new functionality")
+    elif deletions > additions and deletions > 20:
+        description_parts.append("remove deprecated code")
+    elif code_context['imports_added']:
+        imports = code_context['imports_added'][:2]
+        description_parts.append(f"integrate {', '.join(imports)}")
+    else:
+        description_parts.append("update implementation")
+
+# Combine description parts
+if len(description_parts) == 1:
+    description = description_parts[0]
+elif len(description_parts) == 2:
+    description = f"{description_parts[0]} and {description_parts[1]}"
 else:
-    description = "update code"
+    # Take the most relevant parts
+    description = f"{description_parts[0]} and {description_parts[1]}"
 
 # Format commit message
 if scope:
