@@ -1,0 +1,402 @@
+---
+alwaysApply: true
+description: "Error handling patterns, custom exceptions, and API error responses"
+tags: ["python", "errors", "exceptions", "api"]
+version: "1.0.0"
+---
+
+# Error Handling Best Practices
+
+Consistent error handling patterns for Python applications.
+
+## Exception Hierarchy
+
+Create a structured exception hierarchy for your domain.
+
+```python
+# src/domain/exceptions/base.py
+from typing import Any
+
+class DomainException(Exception):
+    """Base exception for all domain errors."""
+    
+    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details or {}
+
+class EntityNotFoundError(DomainException):
+    """Raised when an entity is not found."""
+    
+    def __init__(self, entity_type: str, entity_id: str) -> None:
+        super().__init__(
+            message=f"{entity_type} with id '{entity_id}' not found",
+            details={"entity_type": entity_type, "entity_id": entity_id},
+        )
+
+class ValidationError(DomainException):
+    """Raised when domain validation fails."""
+    
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(
+            message=f"Validation error on '{field}': {message}",
+            details={"field": field, "error": message},
+        )
+
+class BusinessRuleViolationError(DomainException):
+    """Raised when a business rule is violated."""
+    pass
+
+class ConflictError(DomainException):
+    """Raised when an operation conflicts with existing state."""
+    pass
+```
+
+## Application Layer Exceptions
+
+```python
+# src/application/exceptions.py
+from src.domain.exceptions import DomainException
+
+class ApplicationException(Exception):
+    """Base exception for application layer errors."""
+    pass
+
+class UnauthorizedError(ApplicationException):
+    """User is not authenticated."""
+    pass
+
+class ForbiddenError(ApplicationException):
+    """User lacks permission for this action."""
+    pass
+
+class ExternalServiceError(ApplicationException):
+    """External service (API, database) failed."""
+    
+    def __init__(self, service: str, message: str) -> None:
+        super().__init__(f"{service} error: {message}")
+        self.service = service
+```
+
+## FastAPI Error Handling
+
+### Error Response Schema
+
+```python
+# src/presentation/schemas/errors.py
+from pydantic import BaseModel, Field
+
+class ErrorResponse(BaseModel):
+    """Standard error response format."""
+    
+    error: str = Field(description="Error type identifier")
+    message: str = Field(description="Human-readable error message")
+    details: dict | None = Field(default=None, description="Additional error details")
+
+class ValidationErrorDetail(BaseModel):
+    """Validation error detail."""
+    
+    field: str
+    message: str
+
+class ValidationErrorResponse(BaseModel):
+    """Validation error response."""
+    
+    error: str = "validation_error"
+    message: str = "Request validation failed"
+    details: list[ValidationErrorDetail]
+```
+
+### Exception Handlers
+
+```python
+# src/presentation/exception_handlers.py
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from src.domain.exceptions import (
+    DomainException,
+    EntityNotFoundError,
+    ValidationError,
+    ConflictError,
+)
+from src.application.exceptions import (
+    UnauthorizedError,
+    ForbiddenError,
+    ExternalServiceError,
+)
+from src.presentation.schemas.errors import ErrorResponse
+
+def register_exception_handlers(app: FastAPI) -> None:
+    """Register all exception handlers."""
+    
+    @app.exception_handler(EntityNotFoundError)
+    async def entity_not_found_handler(
+        request: Request,
+        exc: EntityNotFoundError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error="not_found",
+                message=exc.message,
+                details=exc.details,
+            ).model_dump(),
+        )
+    
+    @app.exception_handler(ValidationError)
+    async def validation_error_handler(
+        request: Request,
+        exc: ValidationError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error="validation_error",
+                message=exc.message,
+                details=exc.details,
+            ).model_dump(),
+        )
+    
+    @app.exception_handler(ConflictError)
+    async def conflict_error_handler(
+        request: Request,
+        exc: ConflictError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content=ErrorResponse(
+                error="conflict",
+                message=exc.message,
+                details=exc.details,
+            ).model_dump(),
+        )
+    
+    @app.exception_handler(UnauthorizedError)
+    async def unauthorized_handler(
+        request: Request,
+        exc: UnauthorizedError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=401,
+            content=ErrorResponse(
+                error="unauthorized",
+                message=str(exc),
+            ).model_dump(),
+        )
+    
+    @app.exception_handler(ForbiddenError)
+    async def forbidden_handler(
+        request: Request,
+        exc: ForbiddenError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content=ErrorResponse(
+                error="forbidden",
+                message=str(exc),
+            ).model_dump(),
+        )
+    
+    @app.exception_handler(ExternalServiceError)
+    async def external_service_handler(
+        request: Request,
+        exc: ExternalServiceError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(
+                error="external_service_error",
+                message="An external service is unavailable",
+            ).model_dump(),
+        )
+    
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        # Log the full exception for debugging
+        import logging
+        logging.exception("Unhandled exception")
+        
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                error="internal_error",
+                message="An unexpected error occurred",
+            ).model_dump(),
+        )
+```
+
+### Registering Handlers
+
+```python
+# src/app.py
+from fastapi import FastAPI
+from src.presentation.exception_handlers import register_exception_handlers
+
+app = FastAPI()
+register_exception_handlers(app)
+```
+
+## Result Pattern (Alternative to Exceptions)
+
+For cases where errors are expected flow, use the Result pattern.
+
+```python
+# src/domain/result.py
+from dataclasses import dataclass
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+E = TypeVar("E")
+
+@dataclass(frozen=True)
+class Success(Generic[T]):
+    """Successful result containing a value."""
+    value: T
+
+@dataclass(frozen=True)
+class Failure(Generic[E]):
+    """Failed result containing an error."""
+    error: E
+
+Result = Success[T] | Failure[E]
+
+# Helper functions
+def success(value: T) -> Success[T]:
+    return Success(value)
+
+def failure(error: E) -> Failure[E]:
+    return Failure(error)
+```
+
+### Usage Example
+
+```python
+# src/application/usecases/create_user.py
+from src.domain.result import Result, success, failure
+
+class CreateUserUseCase:
+    def execute(self, email: str) -> Result[User, str]:
+        # Check if user exists
+        existing = self._user_repo.find_by_email(email)
+        if existing:
+            return failure("User with this email already exists")
+        
+        # Create user
+        user = User(id=uuid4(), email=email)
+        saved = self._user_repo.save(user)
+        return success(saved)
+
+# In endpoint
+@router.post("/users")
+async def create_user(request: CreateUserRequest) -> UserResponse:
+    result = usecase.execute(request.email)
+    
+    match result:
+        case Success(user):
+            return UserResponse.from_entity(user)
+        case Failure(error):
+            raise HTTPException(status_code=400, detail=error)
+```
+
+## Best Practices
+
+### Do's
+
+```python
+# ✅ Use specific exception types
+raise EntityNotFoundError("User", user_id)
+
+# ✅ Include context in exceptions
+raise ValidationError(field="email", message="Invalid format")
+
+# ✅ Catch specific exceptions
+try:
+    user = repo.get(user_id)
+except EntityNotFoundError:
+    return None
+
+# ✅ Re-raise with context
+try:
+    external_api.call()
+except requests.RequestException as e:
+    raise ExternalServiceError("PaymentAPI", str(e)) from e
+```
+
+### Don'ts
+
+```python
+# ❌ Don't use bare except
+try:
+    do_something()
+except:  # Bad!
+    pass
+
+# ❌ Don't catch Exception broadly
+try:
+    do_something()
+except Exception:  # Too broad
+    pass
+
+# ❌ Don't lose exception context
+try:
+    external_api.call()
+except requests.RequestException:
+    raise ExternalServiceError("API failed")  # Lost original exception!
+
+# ❌ Don't use exceptions for flow control
+try:
+    user = repo.get(user_id)
+except EntityNotFoundError:
+    user = create_default_user()  # Use if/else instead
+```
+
+## HTTP Status Code Mapping
+
+| Exception Type | HTTP Status | When to Use |
+|----------------|-------------|-------------|
+| `ValidationError` | 400 | Invalid request data |
+| `UnauthorizedError` | 401 | Missing/invalid authentication |
+| `ForbiddenError` | 403 | Authenticated but not permitted |
+| `EntityNotFoundError` | 404 | Resource doesn't exist |
+| `ConflictError` | 409 | State conflict (e.g., duplicate) |
+| `ExternalServiceError` | 502 | Upstream service failure |
+| Unhandled exceptions | 500 | Unexpected server errors |
+
+## Testing Exceptions
+
+```python
+# tests/unit/domain/test_exceptions.py
+import pytest
+from src.domain.exceptions import EntityNotFoundError, ValidationError
+
+class TestEntityNotFoundError:
+    def test_message_format(self) -> None:
+        exc = EntityNotFoundError("User", "123")
+        assert exc.message == "User with id '123' not found"
+        assert exc.details == {"entity_type": "User", "entity_id": "123"}
+
+class TestValidationError:
+    def test_message_format(self) -> None:
+        exc = ValidationError("email", "Invalid format")
+        assert "email" in exc.message
+        assert exc.details["field"] == "email"
+```
+
+```python
+# tests/e2e/test_error_responses.py
+def test_not_found_returns_404(client: TestClient) -> None:
+    response = client.get("/users/nonexistent-id")
+    
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+def test_validation_error_returns_400(client: TestClient) -> None:
+    response = client.post("/users", json={"email": "invalid"})
+    
+    assert response.status_code == 400
+    assert response.json()["error"] == "validation_error"
+```

@@ -1,0 +1,233 @@
+---
+alwaysApply: true
+description: "Testing pyramid, test organization, and language-agnostic best practices"
+tags: ["testing", "tdd", "test-pyramid", "mocking", "best-practices"]
+version: "1.0.0"
+---
+
+# Software Testing Best Practices
+
+## Testing Pyramid
+
+```
+        /\
+       /  \      E2E Tests (few)
+      /----\     - Full system, slow, brittle
+     /      \
+    /--------\   Integration Tests (some)
+   /          \  - Multiple components, medium speed
+  /------------\ Unit Tests (many)
+ /              \ - Single unit, fast, isolated
+```
+
+### Layer Distribution
+- **Unit Tests (70%)**: Fast, isolated, test single units
+- **Integration Tests (20%)**: Test component interactions
+- **E2E Tests (10%)**: Validate complete user flows
+
+## Clean Architecture Testing Strategy
+
+### Test Each Layer Independently
+
+| Layer | Test Type | Dependencies | Speed |
+|-------|-----------|--------------|-------|
+| Domain | Unit | None (pure logic) | Instant |
+| Application | Unit | Mocked ports | Fast |
+| Infrastructure | Integration | Real services | Slow |
+| Presentation | E2E/Integration | Mocked/Real | Varies |
+
+### Domain Layer
+- Test pure business logic
+- No mocks needed—entities and value objects are self-contained
+- Validate invariants and business rules
+
+### Application Layer
+- Test UseCases with mocked ports
+- Verify orchestration logic
+- Mock repositories, external services
+
+### Infrastructure Layer
+- Integration tests with real databases
+- Use testcontainers or in-memory alternatives
+- Test actual implementations of ports
+
+### Presentation Layer
+- Test API contracts
+- Override dependencies with mocks
+- Validate request/response schemas
+
+## Dependency Injection for Testing
+
+### Principle
+Design for testability by depending on abstractions and injecting dependencies.
+
+```
+Production:
+  Endpoint → UseCase → RealRepository → Database
+
+Testing:
+  Endpoint → UseCase → MockRepository → (nothing)
+```
+
+### Benefits
+1. **Isolation**: Test units without external dependencies
+2. **Speed**: Mocks are instant, no I/O
+3. **Determinism**: Control all inputs and outputs
+4. **Flexibility**: Test edge cases easily
+
+### Patterns
+
+#### Constructor Injection
+```
+class UseCase:
+    def __init__(self, repository: RepositoryPort):
+        self._repository = repository
+
+# In tests
+mock_repo = MockRepository()
+usecase = UseCase(repository=mock_repo)
+```
+
+#### Framework-Managed Injection
+```
+# FastAPI dependency_overrides
+app.dependency_overrides[get_repository] = lambda: mock_repo
+
+# After test
+app.dependency_overrides.clear()
+```
+
+## Test Doubles
+
+| Type | Purpose | State | Behavior |
+|------|---------|-------|----------|
+| **Dummy** | Fill parameter lists | None | None |
+| **Stub** | Provide canned answers | Fixed returns | Minimal |
+| **Spy** | Record interactions | Tracks calls | Real or fake |
+| **Mock** | Verify interactions | Tracks calls | Configurable |
+| **Fake** | Working implementation | In-memory | Simplified real |
+
+### When to Use Each
+
+- **Dummy**: Parameter not used in test
+- **Stub**: Need specific return values
+- **Spy**: Verify method was called with args
+- **Mock**: Full behavior verification
+- **Fake**: Need realistic behavior without real service
+
+## Test Organization
+
+### Arrange-Act-Assert (AAA)
+
+```
+def test_something():
+    # Arrange - Set up test data and dependencies
+    user = create_user()
+    mock_repo.find.return_value = user
+    
+    # Act - Execute the behavior under test
+    result = usecase.execute(user.id)
+    
+    # Assert - Verify the outcome
+    assert result == expected
+    mock_repo.find.assert_called_once_with(user.id)
+```
+
+### Given-When-Then (BDD Style)
+
+```
+def test_user_can_update_profile():
+    # Given a user exists
+    user = existing_user()
+    
+    # When they update their name
+    result = update_profile(user.id, name="New Name")
+    
+    # Then the name is changed
+    assert result.name == "New Name"
+```
+
+## Test Isolation
+
+### Each Test Should
+1. Set up its own data
+2. Not depend on other tests
+3. Clean up after itself
+4. Be runnable in any order
+
+### Avoid
+- Shared mutable state between tests
+- Tests that must run in sequence
+- Global setup that affects multiple tests
+
+## Naming Conventions
+
+### Descriptive Test Names
+
+```
+# Good - describes behavior
+test_creates_user_when_email_is_valid
+test_raises_error_when_email_already_exists
+test_returns_none_when_user_not_found
+
+# Bad - describes implementation
+test_save_method
+test_repository
+test_user
+```
+
+### Pattern: `test_<action>_when_<condition>`
+
+## Test Coverage
+
+### What to Measure
+- **Line coverage**: Basic metric, aim for 80%+
+- **Branch coverage**: All if/else paths
+- **Mutation coverage**: Tests catch code changes
+
+### What NOT to Chase
+- 100% coverage as a goal
+- Coverage on generated code
+- Coverage on trivial code (getters/setters)
+
+### Focus On
+- Business logic coverage
+- Edge cases and error paths
+- Critical user flows
+
+## Testing Async Code
+
+1. Use appropriate test runners (pytest-asyncio)
+2. Test both success and failure paths
+3. Test timeout behavior
+4. Mock async dependencies properly
+
+## Integration Testing Strategies
+
+### Testcontainers
+- Spin up real services in Docker
+- Consistent environment
+- Slower but realistic
+
+### In-Memory Alternatives
+- SQLite instead of PostgreSQL
+- In-memory cache instead of Redis
+- Faster but less realistic
+
+### Shared Test Database
+- Fast, reuses connection
+- Requires cleanup between tests
+- Risk of test pollution
+
+## Best Practices Summary
+
+1. **Fast feedback**: Unit tests should run in milliseconds
+2. **Isolated tests**: No dependencies between tests
+3. **Readable tests**: Tests document expected behavior
+4. **One reason to fail**: Each test verifies one thing
+5. **Test behavior**: Not implementation details
+6. **Use fixtures**: Share setup, reduce duplication
+7. **Mock at boundaries**: Interfaces, not internals
+8. **Deterministic**: Same input → same output
+9. **Maintainable**: Tests need maintenance too
+10. **CI/CD integration**: Run tests on every commit

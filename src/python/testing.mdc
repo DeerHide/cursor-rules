@@ -1,0 +1,416 @@
+---
+alwaysApply: true
+description: "pytest patterns, fixtures, and Clean Architecture testing strategies"
+tags: ["python", "testing", "pytest", "fixtures", "clean-architecture"]
+version: "1.0.0"
+---
+
+# Python Testing Best Practices
+
+Use pytest as the testing framework with clean architecture patterns.
+
+## Project Structure
+
+```
+tests/
+├── conftest.py              # Shared fixtures
+├── unit/                    # Unit tests (fast, isolated)
+│   ├── domain/
+│   │   ├── test_entities.py
+│   │   └── test_value_objects.py
+│   └── application/
+│       └── test_usecases.py
+├── integration/             # Integration tests (DB, APIs)
+│   └── infrastructure/
+│       └── test_repositories.py
+└── e2e/                     # End-to-end tests
+    └── test_api.py
+```
+
+## Testing by Layer (Clean Architecture)
+
+### Domain Layer Tests
+
+Test entities and value objects in isolation. No mocks needed—pure business logic.
+
+```python
+# tests/unit/domain/test_value_objects.py
+import pytest
+from my_app.domain.value_objects import Email, UserName
+
+class TestEmail:
+    def test_valid_email(self) -> None:
+        email = Email("user@example.com")
+        assert email.value == "user@example.com"
+
+    def test_invalid_email_raises(self) -> None:
+        with pytest.raises(ValueError, match="Invalid email"):
+            Email("invalid-email")
+
+    def test_equality(self) -> None:
+        assert Email("a@b.com") == Email("a@b.com")
+        assert Email("a@b.com") != Email("x@y.com")
+
+    def test_immutability(self) -> None:
+        email = Email("user@example.com")
+        with pytest.raises(AttributeError):
+            email._value = "other@example.com"
+```
+
+```python
+# tests/unit/domain/test_entities.py
+from uuid import uuid4
+from my_app.domain.entities import User
+from my_app.domain.value_objects import Email, UserName
+
+class TestUser:
+    def test_create_user(self) -> None:
+        user = User(
+            id=uuid4(),
+            email=Email("user@example.com"),
+            name=UserName("John Doe"),
+        )
+        assert user.email.value == "user@example.com"
+
+    def test_user_from_raw_values(self) -> None:
+        """Pydantic coercion from raw values."""
+        user = User(id=uuid4(), email="user@example.com", name="John")
+        assert isinstance(user.email, Email)
+```
+
+### Application Layer Tests
+
+Test UseCases with mocked ports (repositories, services).
+
+```python
+# tests/unit/application/test_usecases.py
+from unittest.mock import Mock
+from uuid import uuid4
+
+import pytest
+
+from my_app.application.usecases import CreateUserUseCase
+from my_app.domain.entities import User
+from my_app.domain.ports import UserRepositoryPort
+
+class TestCreateUserUseCase:
+    @pytest.fixture
+    def mock_user_repo(self) -> Mock:
+        return Mock(spec=UserRepositoryPort)
+
+    @pytest.fixture
+    def usecase(self, mock_user_repo: Mock) -> CreateUserUseCase:
+        return CreateUserUseCase(user_repo=mock_user_repo)
+
+    def test_creates_user_successfully(
+        self,
+        usecase: CreateUserUseCase,
+        mock_user_repo: Mock,
+    ) -> None:
+        # Arrange
+        mock_user_repo.save.return_value = User(
+            id=uuid4(),
+            email="test@example.com",
+            name="Test User",
+        )
+
+        # Act
+        result = usecase.execute(email="test@example.com", name="Test User")
+
+        # Assert
+        mock_user_repo.save.assert_called_once()
+        assert result.email.value == "test@example.com"
+
+    def test_raises_when_email_exists(
+        self,
+        usecase: CreateUserUseCase,
+        mock_user_repo: Mock,
+    ) -> None:
+        # Arrange
+        mock_user_repo.find_by_email.return_value = Mock()
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="Email already exists"):
+            usecase.execute(email="existing@example.com", name="User")
+```
+
+### Infrastructure Layer Tests
+
+Integration tests with real dependencies (use testcontainers or in-memory implementations).
+
+```python
+# tests/integration/infrastructure/test_repositories.py
+import pytest
+from testcontainers.mongodb import MongoDbContainer
+
+from my_app.infrastructure.repositories import UserRepository
+
+@pytest.fixture(scope="module")
+def mongodb():
+    with MongoDbContainer() as mongo:
+        yield mongo.get_connection_url()
+
+@pytest.fixture
+def user_repo(mongodb: str) -> UserRepository:
+    return UserRepository(connection_url=mongodb)
+
+class TestUserRepository:
+    async def test_save_and_find(self, user_repo: UserRepository) -> None:
+        # Arrange
+        user = User(id=uuid4(), email="test@example.com", name="Test")
+
+        # Act
+        saved = await user_repo.save(user)
+        found = await user_repo.find_by_id(saved.id)
+
+        # Assert
+        assert found is not None
+        assert found.email == user.email
+```
+
+### Presentation Layer Tests (API)
+
+Test endpoints with FastAPI TestClient and dependency overrides.
+
+```python
+# tests/e2e/test_api.py
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from unittest.mock import Mock
+
+from my_app.presentation.dependencies import get_user_repository
+from my_app.domain.ports import UserRepositoryPort
+
+@pytest.fixture
+def mock_user_repo() -> Mock:
+    return Mock(spec=UserRepositoryPort)
+
+@pytest.fixture
+def client(app: FastAPI, mock_user_repo: Mock) -> TestClient:
+    app.dependency_overrides[get_user_repository] = lambda: mock_user_repo
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+class TestUsersAPI:
+    def test_create_user(
+        self,
+        client: TestClient,
+        mock_user_repo: Mock,
+    ) -> None:
+        # Arrange
+        mock_user_repo.save.return_value = User(
+            id=uuid4(),
+            email="new@example.com",
+            name="New User",
+        )
+
+        # Act
+        response = client.post(
+            "/users/",
+            json={"email": "new@example.com", "name": "New User"},
+        )
+
+        # Assert
+        assert response.status_code == 201
+        assert response.json()["email"] == "new@example.com"
+
+    def test_create_user_invalid_email(self, client: TestClient) -> None:
+        response = client.post(
+            "/users/",
+            json={"email": "invalid", "name": "User"},
+        )
+        assert response.status_code == 422
+```
+
+## Dependency Injection in Tests
+
+### Using dependency_overrides
+
+```python
+# tests/conftest.py
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from unittest.mock import Mock
+
+from my_app.app import create_app
+from my_app.presentation.dependencies import (
+    get_user_repository,
+    get_create_user_usecase,
+)
+
+@pytest.fixture
+def app() -> FastAPI:
+    return create_app()
+
+@pytest.fixture
+def mock_user_repo() -> Mock:
+    return Mock(spec=UserRepositoryPort)
+
+@pytest.fixture
+def client(app: FastAPI, mock_user_repo: Mock) -> TestClient:
+    """TestClient with mocked dependencies."""
+    app.dependency_overrides[get_user_repository] = lambda: mock_user_repo
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+```
+
+### Creating Test Doubles
+
+```python
+# tests/doubles/repositories.py
+from my_app.domain.ports import UserRepositoryPort
+from my_app.domain.entities import User
+
+class InMemoryUserRepository(UserRepositoryPort):
+    """In-memory implementation for testing."""
+
+    def __init__(self) -> None:
+        self._users: dict[UUID, User] = {}
+
+    async def save(self, user: User) -> User:
+        self._users[user.id] = user
+        return user
+
+    async def find_by_id(self, user_id: UUID) -> User | None:
+        return self._users.get(user_id)
+
+    async def find_by_email(self, email: str) -> User | None:
+        return next(
+            (u for u in self._users.values() if u.email.value == email),
+            None,
+        )
+```
+
+### Using Test Doubles
+
+```python
+# tests/conftest.py
+from tests.doubles.repositories import InMemoryUserRepository
+
+@pytest.fixture
+def in_memory_user_repo() -> InMemoryUserRepository:
+    return InMemoryUserRepository()
+
+@pytest.fixture
+def client_with_in_memory(
+    app: FastAPI,
+    in_memory_user_repo: InMemoryUserRepository,
+) -> TestClient:
+    app.dependency_overrides[get_user_repository] = lambda: in_memory_user_repo
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+```
+
+## Async Testing
+
+```python
+# tests/conftest.py
+import pytest
+import asyncio
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create event loop for async tests."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+# Use pytest-asyncio
+@pytest.mark.asyncio
+async def test_async_operation() -> None:
+    result = await some_async_function()
+    assert result is not None
+```
+
+## Fixtures Best Practices
+
+```python
+# tests/conftest.py
+import pytest
+from uuid import uuid4
+
+from my_app.domain.entities import User
+from my_app.domain.value_objects import Email, UserName
+
+@pytest.fixture
+def sample_user() -> User:
+    """Reusable user fixture."""
+    return User(
+        id=uuid4(),
+        email=Email("fixture@example.com"),
+        name=UserName("Fixture User"),
+    )
+
+@pytest.fixture
+def user_factory():
+    """Factory fixture for creating users with custom attributes."""
+    def _create_user(
+        email: str = "default@example.com",
+        name: str = "Default User",
+    ) -> User:
+        return User(
+            id=uuid4(),
+            email=Email(email),
+            name=UserName(name),
+        )
+    return _create_user
+```
+
+## Test Markers
+
+```python
+# pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+    "unit: Unit tests (fast, no external deps)",
+    "integration: Integration tests (may use DB, network)",
+    "e2e: End-to-end tests",
+    "slow: Slow tests",
+]
+```
+
+```python
+# Usage
+@pytest.mark.unit
+def test_fast_unit_test() -> None:
+    ...
+
+@pytest.mark.integration
+async def test_database_operation() -> None:
+    ...
+
+# Run specific markers
+# pytest -m unit
+# pytest -m "not slow"
+```
+
+## Coverage
+
+```toml
+# pyproject.toml
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+```
+
+## Best Practices Summary
+
+1. **Arrange-Act-Assert**: Structure tests clearly with AAA pattern
+2. **One assertion per test**: Keep tests focused and readable
+3. **Test behavior, not implementation**: Focus on what, not how
+4. **Use fixtures**: Share setup code, avoid duplication
+5. **Mock at boundaries**: Mock ports/interfaces, not internal classes
+6. **Fast unit tests**: Domain and application tests should be instant
+7. **Isolated tests**: Each test should be independent
+8. **Descriptive names**: `test_creates_user_when_email_is_valid`
+9. **Type annotations**: Always type test functions and fixtures
+10. **Clean Architecture**: Test each layer appropriately
