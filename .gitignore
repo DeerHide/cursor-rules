@@ -1,0 +1,32 @@
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+.cache/
+
+# Build artifacts
+dist/
+build/
+*.pyc
+__pycache__/
+node_modules/
+
+# Local test files
+/tmp/
+test-project/

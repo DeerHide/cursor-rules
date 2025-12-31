@@ -1,0 +1,25 @@
+# [Rule Name]
+
+## Description
+Brief description of what this cursor rule does and when to use it.
+
+## Usage
+1. Copy this file to your project's `.cursorrules` or `.cursor/rules/` directory
+2. Customize the rules below based on your project needs
+3. Restart Cursor or reload the workspace
+
+## Rules
+
+```
+[Add your cursor rules here]
+
+Example:
+- Follow [specific coding standard]
+- Use [specific library/framework] patterns
+- Implement [specific architecture/design pattern]
+```
+
+## Notes
+- Add any additional notes or context
+- List any dependencies or requirements
+- Mention any known limitations

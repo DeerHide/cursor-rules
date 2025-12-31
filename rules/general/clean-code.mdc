@@ -1,0 +1,32 @@
+# Clean Code Principles
+
+## Description
+General clean code principles to maintain code quality and readability.
+
+## Usage
+1. Copy this file to your project's `.cursorrules` or `.cursor/rules/` directory
+2. Customize based on your team's coding standards
+3. Restart Cursor or reload the workspace
+
+## Rules
+
+```
+Code Quality Standards:
+- Write self-documenting code with clear variable and function names
+- Keep functions small and focused (single responsibility principle)
+- Follow DRY (Don't Repeat Yourself) principle
+- Add comments only when necessary to explain "why", not "what"
+- Maintain consistent code formatting and style
+- Use meaningful names that reveal intent
+- Avoid magic numbers and strings - use named constants
+- Keep nesting levels shallow (max 3-4 levels)
+- Write unit tests for critical functionality
+- Handle errors gracefully with proper error messages
+- Remove dead code and unused imports
+- Keep code modular and loosely coupled
+```
+
+## Notes
+- These principles are language-agnostic
+- Adapt to your specific project requirements
+- Consider using a linter/formatter for automatic enforcement

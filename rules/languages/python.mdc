@@ -1,0 +1,40 @@
+# Python Development Rules
+
+## Description
+Cursor rules for Python development following modern Python best practices.
+
+## Usage
+1. Copy this file to your project's `.cursorrules` or `.cursor/rules/` directory
+2. Customize based on your Python version and project needs
+3. Restart Cursor or reload the workspace
+
+## Rules
+
+```
+Python Best Practices:
+- Use Python 3.8+ features (type hints, f-strings, etc.)
+- Follow PEP 8 style guide for code formatting
+- Use type hints for function signatures and class attributes
+- Write docstrings for all public modules, classes, and functions (Google or NumPy style)
+- Use list/dict comprehensions when they improve readability
+- Prefer pathlib over os.path for file operations
+- Use context managers (with statement) for resource management
+- Use dataclasses for simple data containers
+- Prefer f-strings for string formatting
+- Use logging instead of print statements for debugging
+- Handle exceptions explicitly - avoid bare except clauses
+- Use virtual environments (venv, poetry, or pipenv)
+- Keep dependencies in requirements.txt or pyproject.toml
+- Use pytest for testing
+- Follow naming conventions:
+  - snake_case for functions and variables
+  - PascalCase for classes
+  - UPPER_CASE for constants
+  - _private for internal use
+```
+
+## Notes
+- Compatible with Python 3.8+
+- Consider using Black for code formatting
+- Use mypy for static type checking
+- Use pylint or ruff for linting

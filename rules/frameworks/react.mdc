@@ -1,0 +1,44 @@
+# React Development Rules
+
+## Description
+Cursor rules for React application development with modern best practices.
+
+## Usage
+1. Copy this file to your project's `.cursorrules` or `.cursor/rules/` directory
+2. Customize based on your React version and project setup
+3. Restart Cursor or reload the workspace
+
+## Rules
+
+```
+React Best Practices:
+- Use functional components with hooks (avoid class components)
+- Follow React hooks rules (only at top level, only in React functions)
+- Use TypeScript for type safety
+- Organize components: one component per file
+- Use meaningful component names (PascalCase)
+- Keep components small and focused (single responsibility)
+- Extract reusable logic into custom hooks
+- Use proper dependency arrays in useEffect and useCallback
+- Avoid prop drilling - use Context API or state management
+- Use React.memo for expensive components (with caution)
+- Prefer composition over prop drilling
+- Use key prop correctly in lists
+- Handle loading and error states
+- Use controlled components for forms
+- Follow React naming conventions:
+  - PascalCase for components
+  - camelCase for functions and variables
+  - use prefix "handle" for event handlers
+  - use prefix "is/has" for boolean variables
+- Organize imports: React first, then libraries, then local imports
+- Use PropTypes or TypeScript for props validation
+- Write tests with React Testing Library
+- Use CSS modules, styled-components, or Tailwind for styling
+```
+
+## Notes
+- Compatible with React 16.8+ (hooks)
+- Works well with Next.js, Vite, or Create React App
+- Consider using state management like Zustand, Redux Toolkit, or Jotai
+- Use React Query/TanStack Query for server state

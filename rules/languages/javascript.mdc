@@ -1,0 +1,38 @@
+# JavaScript/TypeScript Development Rules
+
+## Description
+Cursor rules for modern JavaScript and TypeScript development.
+
+## Usage
+1. Copy this file to your project's `.cursorrules` or `.cursor/rules/` directory
+2. Customize based on your project's JavaScript/TypeScript setup
+3. Restart Cursor or reload the workspace
+
+## Rules
+
+```
+JavaScript/TypeScript Best Practices:
+- Use TypeScript for type safety (recommended)
+- Use ES6+ features (arrow functions, destructuring, spread operator, etc.)
+- Prefer const over let, never use var
+- Use async/await instead of callbacks or raw promises
+- Follow Airbnb JavaScript Style Guide or Standard JS
+- Use meaningful variable and function names
+- Destructure objects and arrays when appropriate
+- Use template literals for string interpolation
+- Prefer functional programming patterns (map, filter, reduce)
+- Use optional chaining (?.) and nullish coalescing (??)
+- Handle errors with try/catch for async operations
+- Use JSDoc comments or TypeScript types for documentation
+- Organize imports (external packages first, then internal modules)
+- Use modern module syntax (import/export)
+- Avoid any type in TypeScript - use unknown or specific types
+- Use strict mode in TypeScript (strict: true)
+- Write unit tests with Jest, Vitest, or similar
+- Use ESLint and Prettier for code quality
+```
+
+## Notes
+- Works with both JavaScript and TypeScript projects
+- Consider using a bundler like Vite, webpack, or esbuild
+- Use npm, yarn, or pnpm for package management
