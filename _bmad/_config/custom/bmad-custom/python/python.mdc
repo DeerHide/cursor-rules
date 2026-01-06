@@ -1,0 +1,244 @@
+---
+alwaysApply: true
+description: "Core Python project structure, tooling, and development conventions"
+tags: ["python", "poetry", "ruff", "mypy", "pre-commit"]
+version: "1.0.0"
+---
+
+# Python Project Rules
+
+## Project Structure
+
+```
+project/
+├── pyproject.toml      # Dependencies, metadata, Python version
+├── src/                # Source code
+├── tests/
+│   ├── conftest.py     # Import all fixtures here
+│   ├── fixtures/       # Test fixtures
+│   ├── unit/           # Unit tests (in-memory, fast)
+│   └── integration/    # Integration tests (testcontainers)
+└── docs/
+    └── openapi/        # OpenAPI specs
+```
+
+## Tools
+
+| Tool       | Purpose              |
+|------------|----------------------|
+| Poetry     | Package management   |
+| Pydantic   | Data validation/models |
+| Ruff       | Linting              |
+| Mypy       | Type checking        |
+| Pytest     | Testing              |
+| Pre-commit | Pre-commit hooks     |
+| git-cz     | Conventional commits |
+
+## Pre-commit Workflow
+**Always run pre-commit after each modification** to check for non-regression.
+
+```bash
+# Run on staged files
+pre-commit run
+
+# Run on all files (recommended after changes)
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run ruff --all-files
+```
+
+⚠️ **Never skip pre-commit checks** before committing.
+
+## Commits
+**Use git-cz (commitizen)** for conventional commit messages.
+
+```bash
+# Interactive commit (recommended)
+git cz
+
+# Or use cz directly
+cz commit
+```
+
+Commit format: `<type>(<scope>): <description>`
+
+| Type     | Usage                          |
+|----------|--------------------------------|
+| feat     | New feature                    |
+| fix      | Bug fix                        |
+| docs     | Documentation only             |
+| refactor | Code change (no fix/feature)   |
+| test     | Adding/updating tests          |
+| chore    | Build, config, dependencies    |
+
+```bash
+# ✅ Good
+feat(auth): add JWT token refresh endpoint
+fix(user): resolve null pointer on empty email
+test(payment): add integration tests for Stripe
+
+# ❌ Bad
+update code
+fixed stuff
+WIP
+```
+
+## Typing
+Always type all code. No exceptions.
+
+```python
+# ✅ Good
+def get_user(user_id: UUID) -> User | None:
+    ...
+
+# ❌ Bad
+def get_user(user_id):
+    ...
+```
+
+### Simple Type Aliases with NewType
+
+Use `NewType` for lightweight type distinctions without runtime overhead:
+
+```python
+from typing import NewType
+from uuid import UUID
+
+UserId = NewType("UserId", UUID)
+OrderId = NewType("OrderId", UUID)
+
+def get_user(user_id: UserId) -> User | None:
+    ...
+
+# ✅ Type checker distinguishes UserId from OrderId
+user_id = UserId(uuid4())
+order_id = OrderId(uuid4())
+get_user(user_id)   # OK
+get_user(order_id)  # Type error: expected UserId, got OrderId
+```
+
+## Docstrings
+All public modules, classes, functions, and methods must have docstrings. Use **Google Style**.
+
+### Function Docstring
+
+```python
+def create_user(name: str, email: str, age: int | None = None) -> User:
+    """Create a new user with the given details.
+
+    Args:
+        name: The user's full name.
+        email: The user's email address.
+        age: The user's age in years. Defaults to None.
+
+    Returns:
+        The newly created User instance.
+
+    Raises:
+        ValueError: If email format is invalid.
+        DuplicateEmailError: If email already exists.
+    """
+    ...
+```
+
+### Class Docstring
+
+```python
+class UserRepository:
+    """Repository for user persistence operations.
+
+    Handles CRUD operations for User entities in the database.
+
+    Attributes:
+        session: The database session for queries.
+        cache: Optional cache for read optimization.
+    """
+
+    def __init__(self, session: Session, cache: Cache | None = None) -> None:
+        """Initialize the repository.
+
+        Args:
+            session: Database session to use.
+            cache: Optional cache instance.
+        """
+        self.session = session
+        self.cache = cache
+```
+
+### Module Docstring
+
+```python
+"""User domain entities and value objects.
+
+This module contains the core User entity and related value objects
+used throughout the application domain layer.
+
+Example:
+    >>> user = User(name="John", email=Email("john@example.com"))
+    >>> user.is_active
+    True
+"""
+```
+
+## Testing Fixtures
+
+Naming convention:
+- `_fixture` → static data
+- `_generator_fixture` → dynamic data
+
+```python
+# tests/fixtures/user.py
+from faker import Faker
+import pytest
+
+fake = Faker()
+
+@pytest.fixture(name="user_name")
+def user_name_fixture() -> str:
+    return "John Doe"
+
+@pytest.fixture(name="random_name")
+def random_name_generator_fixture() -> str:
+    return fake.name()
+
+@pytest.fixture(name="user")
+def user_fixture(user_name: str) -> User:
+    return User(name=user_name)
+```
+
+```python
+# tests/conftest.py
+from .fixtures.user import user_name_fixture, user_fixture
+__all__ = ["user_name_fixture", "user_fixture"]
+```
+
+## Unit Tests
+- In-memory only, no external dependencies
+- Group by scope in classes
+- Mirror `src/` structure
+
+```python
+# tests/unit/domain/entities/test_user.py
+class TestUserEntity:
+    def test_is_valid_email_returns_true(self) -> None:
+        user = User(email="test@example.com")
+        assert user.is_valid_email() is True
+```
+
+## Integration Tests
+Use testcontainers. One container per dependency, isolated test spaces.
+
+```python
+# tests/integration/conftest.py
+@pytest.fixture(scope="session")
+def postgres_container() -> PostgresContainer:
+    with PostgresContainer() as pg:
+        yield pg
+
+@pytest.fixture
+def test_db(postgres_container: PostgresContainer) -> Database:
+    schema = f"test_{uuid4().hex[:8]}"
+    # Create isolated schema per test
+    return Database(postgres_container.url, schema=schema)
+```

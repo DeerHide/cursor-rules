@@ -1,0 +1,12 @@
+installation:
+  version: 6.0.0-alpha.22
+  installDate: 2026-01-06T10:34:14.779Z
+  lastUpdated: 2026-01-06T10:34:14.779Z
+modules:
+  - core
+  - bmb
+  - bmm
+  - cis
+  - bmad-custom
+ides:
+  - cursor

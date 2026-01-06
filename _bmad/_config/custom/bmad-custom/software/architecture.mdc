@@ -1,0 +1,53 @@
+---
+alwaysApply: true
+description: "Language-agnostic Dependency Injection principles and patterns"
+tags: ["architecture", "dependency-injection", "design-patterns", "solid"]
+version: "1.0.0"
+---
+
+# Software Architecture Principles
+
+## Dependency Injection
+
+Dependency Injection (DI) is a design pattern where dependencies are provided to a component rather than created internally.
+
+### Core Principles
+
+1. **Inversion of Control**: High-level modules should not depend on low-level modules; both should depend on abstractions
+2. **Dependency Inversion**: Depend on abstractions (interfaces/protocols), not concrete implementations
+3. **Single Responsibility**: Each component should have one reason to change
+
+### FastAPI Depends Pattern
+
+FastAPI provides a powerful DI system through `Depends`. Use it to:
+
+```python
+from typing import Annotated
+from fastapi import Depends
+
+# Define a dependency factory
+def get_service() -> ServiceProtocol:
+    return ConcreteService()
+
+# Create a typed dependency alias
+ServiceDep = Annotated[ServiceProtocol, Depends(get_service)]
+
+# Use in endpoints
+@router.get("/")
+async def endpoint(service: ServiceDep) -> Response:
+    return service.execute()
+```
+
+### Benefits of DI
+
+- **Testability**: Replace real implementations with mocks/stubs
+- **Flexibility**: Swap implementations without changing consumers
+- **Clarity**: Dependencies are explicit in function signatures
+- **Lifecycle Management**: Framework handles creation and cleanup
+
+### Best Practices
+
+1. **Use Annotated types**: Create reusable dependency type aliases
+2. **Program to interfaces**: Depend on Protocol/ABC, not concrete classes
+3. **Compose dependencies**: Build complex services from simpler ones
+4. **Avoid service locators**: Prefer constructor/parameter injection

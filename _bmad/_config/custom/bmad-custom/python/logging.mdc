@@ -1,0 +1,392 @@
+---
+alwaysApply: true
+description: "Structured logging patterns, log levels, and correlation IDs"
+tags: ["python", "logging", "observability", "monitoring"]
+version: "1.0.0"
+---
+
+# Logging Best Practices
+
+Consistent logging patterns for Python applications with structured logging support.
+
+## Structured Logging with structlog
+
+Use `structlog` for structured, JSON-formatted logs in production.
+
+### Installation
+
+```bash
+poetry add structlog
+```
+
+### Configuration
+
+```python
+# src/infrastructure/logging.py
+import logging
+import sys
+from typing import Any
+
+import structlog
+
+def configure_logging(
+    level: str = "INFO",
+    json_format: bool = True,
+) -> None:
+    """Configure structured logging for the application."""
+    
+    # Set up standard library logging
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=getattr(logging, level.upper()),
+    )
+    
+    # Choose processors based on environment
+    if json_format:
+        # Production: JSON output
+        renderer = structlog.processors.JSONRenderer()
+    else:
+        # Development: colored console output
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
+    
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.format_exc_info,
+            renderer,
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(
+            getattr(logging, level.upper())
+        ),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+```
+
+### Logger Usage
+
+```python
+# src/application/usecases/create_user.py
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+class CreateUserUseCase:
+    def execute(self, email: str, name: str) -> User:
+        logger.info("Creating user", email=email)
+        
+        try:
+            user = User(id=uuid4(), email=email, name=name)
+            saved = self._user_repo.save(user)
+            
+            logger.info(
+                "User created successfully",
+                user_id=str(saved.id),
+                email=email,
+            )
+            return saved
+            
+        except Exception as e:
+            logger.error(
+                "Failed to create user",
+                email=email,
+                error=str(e),
+                exc_info=True,
+            )
+            raise
+```
+
+## Correlation IDs for Request Tracing
+
+Track requests across services with correlation IDs.
+
+### Middleware
+
+```python
+# src/presentation/middleware/correlation.py
+import uuid
+from contextvars import ContextVar
+
+import structlog
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
+
+CORRELATION_ID_HEADER = "X-Correlation-ID"
+
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    """Add correlation ID to all requests."""
+    
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # Get or generate correlation ID
+        correlation_id = request.headers.get(
+            CORRELATION_ID_HEADER,
+            str(uuid.uuid4()),
+        )
+        
+        # Store in context var for structlog
+        correlation_id_var.set(correlation_id)
+        
+        # Bind to structlog context
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(
+            correlation_id=correlation_id,
+        )
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Add to response headers
+        response.headers[CORRELATION_ID_HEADER] = correlation_id
+        
+        return response
+```
+
+### Register Middleware
+
+```python
+# src/app.py
+from fastapi import FastAPI
+from src.presentation.middleware.correlation import CorrelationIdMiddleware
+
+app = FastAPI()
+app.add_middleware(CorrelationIdMiddleware)
+```
+
+## Log Levels
+
+Use appropriate log levels consistently.
+
+| Level | Usage | Examples |
+|-------|-------|----------|
+| **DEBUG** | Detailed diagnostic info | Variable values, loop iterations |
+| **INFO** | Normal operations | Request received, user created |
+| **WARNING** | Unexpected but handled | Retry attempt, deprecated usage |
+| **ERROR** | Failure requiring attention | External service down, validation failed |
+| **CRITICAL** | System-wide failure | Database unreachable, out of memory |
+
+### Level Usage Examples
+
+```python
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+# DEBUG: Detailed diagnostic information
+logger.debug("Processing item", item_id=item.id, status=item.status)
+
+# INFO: Normal operational messages
+logger.info("User logged in", user_id=str(user.id))
+logger.info("Order processed", order_id=str(order.id), total=order.total)
+
+# WARNING: Something unexpected but handled
+logger.warning(
+    "Rate limit approaching",
+    current=95,
+    limit=100,
+    user_id=str(user.id),
+)
+logger.warning("Using deprecated API endpoint", endpoint="/v1/users")
+
+# ERROR: Something failed
+logger.error(
+    "Payment processing failed",
+    order_id=str(order.id),
+    error="Card declined",
+    exc_info=True,
+)
+
+# CRITICAL: System-level failure
+logger.critical(
+    "Database connection lost",
+    host=db_host,
+    retry_count=max_retries,
+)
+```
+
+## Request/Response Logging
+
+Log HTTP requests and responses for debugging and auditing.
+
+```python
+# src/presentation/middleware/logging.py
+import time
+from typing import Callable
+
+import structlog
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+logger = structlog.get_logger(__name__)
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log all HTTP requests and responses."""
+    
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable,
+    ) -> Response:
+        start_time = time.perf_counter()
+        
+        # Log request
+        logger.info(
+            "Request started",
+            method=request.method,
+            path=request.url.path,
+            query=str(request.query_params),
+            client_ip=request.client.host if request.client else None,
+        )
+        
+        try:
+            response = await call_next(request)
+            
+            # Log response
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                "Request completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=round(duration_ms, 2),
+            )
+            
+            return response
+            
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.error(
+                "Request failed",
+                method=request.method,
+                path=request.url.path,
+                error=str(e),
+                duration_ms=round(duration_ms, 2),
+                exc_info=True,
+            )
+            raise
+```
+
+## Context Binding
+
+Add context that persists across log calls.
+
+```python
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+class OrderService:
+    def process_order(self, order: Order) -> None:
+        # Bind context for all subsequent logs
+        log = logger.bind(
+            order_id=str(order.id),
+            customer_id=str(order.customer_id),
+        )
+        
+        log.info("Starting order processing")
+        
+        # Validate
+        log.debug("Validating order items", item_count=len(order.items))
+        self._validate(order)
+        
+        # Process payment
+        log.info("Processing payment", amount=order.total)
+        self._process_payment(order)
+        
+        # Complete
+        log.info("Order processing complete")
+```
+
+## Sensitive Data
+
+Never log sensitive information.
+
+```python
+# ❌ Bad: Logging sensitive data
+logger.info("User login", email=email, password=password)
+logger.info("Payment", card_number=card_number)
+
+# ✅ Good: Redact or omit sensitive data
+logger.info("User login", email=email)
+logger.info("Payment", card_last_four=card_number[-4:])
+
+# ✅ Good: Use a redaction processor
+def redact_sensitive(
+    logger: Any,
+    method_name: str,
+    event_dict: dict,
+) -> dict:
+    """Redact sensitive fields from logs."""
+    sensitive_fields = {"password", "token", "api_key", "secret"}
+    
+    for field in sensitive_fields:
+        if field in event_dict:
+            event_dict[field] = "[REDACTED]"
+    
+    return event_dict
+```
+
+## JSON Log Output Example
+
+```json
+{
+  "event": "User created successfully",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "user@example.com",
+  "correlation_id": "abc123-def456",
+  "level": "info",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "logger": "src.application.usecases.create_user"
+}
+```
+
+## Integration with OpenTelemetry
+
+For distributed tracing, integrate with OpenTelemetry.
+
+```python
+# src/infrastructure/logging.py
+from opentelemetry import trace
+
+def add_trace_context(
+    logger: Any,
+    method_name: str,
+    event_dict: dict,
+) -> dict:
+    """Add OpenTelemetry trace context to logs."""
+    span = trace.get_current_span()
+    if span.is_recording():
+        ctx = span.get_span_context()
+        event_dict["trace_id"] = format(ctx.trace_id, "032x")
+        event_dict["span_id"] = format(ctx.span_id, "016x")
+    return event_dict
+
+# Add to structlog processors
+structlog.configure(
+    processors=[
+        add_trace_context,
+        # ... other processors
+    ],
+)
+```
+
+## Best Practices Summary
+
+1. **Use structured logging**: Key-value pairs, not string interpolation
+2. **Include context**: user_id, request_id, correlation_id
+3. **Choose correct levels**: DEBUG < INFO < WARNING < ERROR < CRITICAL
+4. **Never log secrets**: Passwords, tokens, PII
+5. **Log at boundaries**: Request start/end, service calls
+6. **Include timing**: Duration for performance analysis
+7. **Use correlation IDs**: Track requests across services
+8. **JSON in production**: Machine-parseable format
+9. **Readable in development**: Colored console output
+10. **Test your logging**: Verify logs contain expected data

@@ -1,0 +1,435 @@
+---
+alwaysApply: true
+description: "Security best practices, input validation, and secrets management"
+tags: ["python", "security", "validation", "secrets"]
+version: "1.0.0"
+---
+
+# Security Best Practices
+
+Security patterns and guidelines for Python applications.
+
+## Input Validation
+
+Always validate and sanitize user input at system boundaries.
+
+### Pydantic Validation
+
+```python
+# src/presentation/schemas/user.py
+from pydantic import BaseModel, Field, field_validator, EmailStr
+import re
+
+class CreateUserRequest(BaseModel):
+    """Request schema with validation."""
+    
+    email: EmailStr = Field(description="Valid email address")
+    name: str = Field(min_length=2, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+    
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        # Only allow alphanumeric and spaces
+        if not re.match(r"^[\w\s-]+$", v):
+            raise ValueError("Name contains invalid characters")
+        return v.strip()
+    
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain uppercase letter")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Password must contain lowercase letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain digit")
+        return v
+```
+
+### Path Parameter Validation
+
+```python
+# src/presentation/api/users.py
+from uuid import UUID
+from fastapi import APIRouter, Path
+
+router = APIRouter()
+
+@router.get("/users/{user_id}")
+async def get_user(
+    # UUID validation prevents path traversal
+    user_id: UUID = Path(..., description="User UUID"),
+) -> UserResponse:
+    return await user_service.get(user_id)
+```
+
+## SQL Injection Prevention
+
+Always use parameterized queries.
+
+```python
+# ❌ Bad: String concatenation
+async def find_by_email_bad(email: str) -> User:
+    query = f"SELECT * FROM users WHERE email = '{email}'"  # SQL Injection!
+    return await db.fetch_one(query)
+
+# ✅ Good: Parameterized query
+async def find_by_email(email: str) -> User:
+    query = "SELECT * FROM users WHERE email = :email"
+    return await db.fetch_one(query, {"email": email})
+```
+
+### With SQLAlchemy
+
+```python
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+async def find_by_email(
+    session: AsyncSession,
+    email: str,
+) -> User | None:
+    # SQLAlchemy handles parameterization
+    stmt = select(UserModel).where(UserModel.email == email)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+```
+
+## Secrets Management
+
+Never hardcode secrets. Use environment variables or secret managers.
+
+### Environment Variables
+
+```python
+# src/infrastructure/config.py
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    """Application settings from environment."""
+    
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    
+    # Use SecretStr to prevent accidental logging
+    database_url: SecretStr = Field(description="Database connection URL")
+    api_key: SecretStr = Field(description="External API key")
+    jwt_secret: SecretStr = Field(description="JWT signing secret")
+    
+    def get_database_url(self) -> str:
+        """Get the actual secret value."""
+        return self.database_url.get_secret_value()
+
+settings = Settings()
+
+# ✅ SecretStr prevents accidental exposure
+print(settings.api_key)  # Output: SecretStr('**********')
+
+# Get actual value when needed
+actual_key = settings.api_key.get_secret_value()
+```
+
+### .env File Template
+
+```bash
+# .env.example (commit this, not .env)
+DATABASE_URL=postgresql://user:password@localhost:5432/db
+API_KEY=your-api-key-here
+JWT_SECRET=your-jwt-secret-here
+```
+
+### .gitignore
+
+```gitignore
+# Never commit secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+```
+
+## Authentication
+
+### Password Hashing
+
+```python
+# src/infrastructure/security/password.py
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    """Hash a password for storage."""
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+```
+
+### JWT Tokens
+
+```python
+# src/infrastructure/security/jwt.py
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import jwt
+from pydantic import BaseModel
+
+class TokenPayload(BaseModel):
+    sub: str  # Subject (user ID)
+    exp: datetime  # Expiration
+    iat: datetime  # Issued at
+
+def create_access_token(
+    user_id: str,
+    secret: str,
+    expires_delta: timedelta = timedelta(hours=1),
+) -> str:
+    """Create a JWT access token."""
+    now = datetime.now(timezone.utc)
+    payload = TokenPayload(
+        sub=user_id,
+        exp=now + expires_delta,
+        iat=now,
+    )
+    return jwt.encode(payload.model_dump(), secret, algorithm="HS256")
+
+def decode_token(token: str, secret: str) -> TokenPayload:
+    """Decode and validate a JWT token."""
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        return TokenPayload(**payload)
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token has expired")
+    except jwt.InvalidTokenError:
+        raise ValueError("Invalid token")
+```
+
+### FastAPI Security Dependencies
+
+```python
+# src/presentation/dependencies/auth.py
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from src.infrastructure.security.jwt import decode_token
+from src.infrastructure.config import settings
+
+security = HTTPBearer()
+
+async def get_current_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials,
+        Depends(security),
+    ],
+) -> str:
+    """Extract and validate user from JWT token."""
+    try:
+        payload = decode_token(
+            credentials.credentials,
+            settings.jwt_secret.get_secret_value(),
+        )
+        return payload.sub
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+CurrentUser = Annotated[str, Depends(get_current_user)]
+
+# Usage in endpoint
+@router.get("/me")
+async def get_current_user_info(user_id: CurrentUser) -> UserResponse:
+    return await user_service.get(user_id)
+```
+
+## CORS Configuration
+
+Configure CORS properly for production.
+
+```python
+# src/app.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# ❌ Bad: Allow all origins in production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Dangerous in production!
+)
+
+# ✅ Good: Explicit allowed origins
+ALLOWED_ORIGINS = [
+    "https://myapp.com",
+    "https://www.myapp.com",
+]
+
+if settings.environment == "development":
+    ALLOWED_ORIGINS.append("http://localhost:3000")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+```
+
+## Rate Limiting
+
+Protect against abuse with rate limiting.
+
+```python
+# src/presentation/middleware/rate_limit.py
+from collections import defaultdict
+from datetime import datetime, timedelta
+from typing import Callable
+
+from fastapi import HTTPException, Request, status
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple in-memory rate limiter."""
+    
+    def __init__(
+        self,
+        app,
+        requests_per_minute: int = 60,
+    ) -> None:
+        super().__init__(app)
+        self.requests_per_minute = requests_per_minute
+        self.requests: dict[str, list[datetime]] = defaultdict(list)
+    
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable,
+    ):
+        client_ip = request.client.host if request.client else "unknown"
+        now = datetime.now()
+        window_start = now - timedelta(minutes=1)
+        
+        # Clean old requests
+        self.requests[client_ip] = [
+            req_time for req_time in self.requests[client_ip]
+            if req_time > window_start
+        ]
+        
+        # Check rate limit
+        if len(self.requests[client_ip]) >= self.requests_per_minute:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded",
+            )
+        
+        # Record request
+        self.requests[client_ip].append(now)
+        
+        return await call_next(request)
+```
+
+## Security Headers
+
+Add security headers to responses.
+
+```python
+# src/presentation/middleware/security_headers.py
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+    
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        
+        # Prevent XSS
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        
+        # Content Security Policy
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        
+        # HTTPS only
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        
+        return response
+```
+
+## Dependency Vulnerabilities
+
+Regularly check for vulnerable dependencies.
+
+```bash
+# Install safety
+poetry add --group dev safety pip-audit
+
+# Check for vulnerabilities
+safety check
+pip-audit
+
+# In CI/CD
+- name: Security scan
+  run: |
+    pip install safety
+    safety check --full-report
+```
+
+## Security Checklist
+
+### Authentication & Authorization
+- [ ] Passwords hashed with bcrypt/argon2
+- [ ] JWT tokens with short expiration
+- [ ] Refresh token rotation
+- [ ] Role-based access control (RBAC)
+
+### Input Validation
+- [ ] All user input validated with Pydantic
+- [ ] File uploads restricted by type and size
+- [ ] Path parameters validated (no traversal)
+
+### Data Protection
+- [ ] Secrets in environment variables
+- [ ] SecretStr for sensitive config
+- [ ] Database queries parameterized
+- [ ] PII encrypted at rest
+
+### API Security
+- [ ] CORS configured for specific origins
+- [ ] Rate limiting enabled
+- [ ] Security headers set
+- [ ] HTTPS enforced
+
+### Dependencies
+- [ ] Dependencies pinned to versions
+- [ ] Regular vulnerability scans
+- [ ] Automated dependency updates
+
+## Best Practices Summary
+
+1. **Validate all input**: Use Pydantic at API boundaries
+2. **Parameterize queries**: Never concatenate SQL strings
+3. **Hash passwords**: Use bcrypt with salt
+4. **Protect secrets**: Environment variables + SecretStr
+5. **Limit CORS**: Explicit allowed origins only
+6. **Rate limit**: Prevent abuse and DoS
+7. **Add security headers**: XSS, clickjacking protection
+8. **Audit dependencies**: Regular vulnerability scans
+9. **Use HTTPS**: Always in production
+10. **Log security events**: Failed auth, rate limits

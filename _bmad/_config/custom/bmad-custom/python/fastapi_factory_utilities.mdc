@@ -1,0 +1,415 @@
+---
+alwaysApply: true
+description: "FastAPI Factory Utilities framework for building microservices with plugins"
+tags: ["python", "fastapi", "microservices", "mongodb", "beanie"]
+version: "1.0.0"
+---
+
+# FastAPI Factory Utilities
+
+Framework for building FastAPI microservices with plugins, configuration, and best practices.
+
+**Repository**: https://github.com/DeerHide/fastapi_factory_utilities
+
+## Installation
+
+```bash
+poetry add fastapi-factory-utilities
+```
+
+## Application Structure
+
+```
+my_app/
+├── pyproject.toml
+├── src/my_app/
+│   ├── __init__.py
+│   ├── application.yaml       # Configuration
+│   ├── app.py                 # Application class
+│   ├── domain/
+│   │   └── entities/          # Beanie documents
+│   └── presentation/
+│       └── api/               # API routers
+└── tests/
+```
+
+## Application Definition
+
+```python
+# src/my_app/app.py
+from typing import ClassVar
+from beanie import Document
+from fastapi_factory_utilities.core.app import (
+    ApplicationAbstract,
+    ApplicationGenericBuilder,
+    RootConfig,
+)
+from fastapi_factory_utilities.core.plugins import PluginAbstract
+from fastapi_factory_utilities.core.plugins.odm_plugin import ODMPlugin
+from fastapi_factory_utilities.core.plugins.opentelemetry_plugin import OpenTelemetryPlugin
+
+
+class MyAppConfig(RootConfig):
+    """Custom application configuration."""
+    pass
+
+
+class MyApp(ApplicationAbstract):
+    """Your microservice application."""
+
+    CONFIG_CLASS: ClassVar[type[RootConfig]] = MyAppConfig
+    PACKAGE_NAME: ClassVar[str] = "my_app"
+    ODM_DOCUMENT_MODELS: ClassVar[list[type[Document]]] = []
+
+    def configure(self) -> None:
+        """Configure routes and middleware."""
+        # self.fastapi.include_router(my_router)
+        pass
+
+    async def on_startup(self) -> None:
+        """Actions on startup."""
+        pass
+
+    async def on_shutdown(self) -> None:
+        """Actions on shutdown."""
+        pass
+
+
+class MyAppBuilder(ApplicationGenericBuilder[MyApp]):
+    """Application builder."""
+
+    def get_default_plugins(self) -> list[PluginAbstract]:
+        return [
+            ODMPlugin(),
+            OpenTelemetryPlugin(),
+        ]
+
+    def __init__(self, plugins: list[PluginAbstract] | None = None) -> None:
+        if plugins is None:
+            plugins = self.get_default_plugins()
+        super().__init__(plugins=plugins)
+
+
+# Entry point
+if __name__ == "__main__":
+    MyAppBuilder().build_and_serve()
+```
+
+## Configuration (application.yaml)
+
+```yaml
+# src/my_app/application.yaml
+application:
+  service_namespace: "my-company"
+  service_name: "my-app"
+  description: "My microservice"
+  version: "1.0.0"
+  environment: "development"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+cors:
+  allow_origins: ["*"]
+  allow_credentials: true
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+```
+
+## Available Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `ODMPlugin` | MongoDB with Beanie ODM |
+| `OpenTelemetryPlugin` | Distributed tracing & metrics |
+| `TaskiqPlugin` | Background tasks (Redis broker) |
+| `AioPikaPlugin` | RabbitMQ messaging |
+| `AioHttpPlugin` | Instrumented HTTP client |
+
+### Plugin Lifecycle
+
+```python
+class PluginAbstract:
+    def on_load(self) -> None:
+        """Initial setup when registered."""
+        ...
+
+    async def on_startup(self) -> None:
+        """Async initialization during app startup."""
+        ...
+
+    async def on_shutdown(self) -> None:
+        """Cleanup during app shutdown."""
+        ...
+```
+
+## Custom Configuration
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+from fastapi_factory_utilities.core.app.config import RootConfig
+
+class MyCustomConfig(BaseModel):
+    """Custom configuration section."""
+    model_config = ConfigDict(frozen=True)
+    
+    api_key: str = Field(description="External API key")
+    timeout: int = Field(default=30, description="Request timeout")
+
+
+class MyAppConfig(RootConfig):
+    """Extended configuration."""
+    my_custom: MyCustomConfig = Field(description="Custom config")
+```
+
+## JWT Authentication
+
+```python
+from fastapi import Depends
+from fastapi_factory_utilities.core.security.jwt import (
+    JWTAuthenticationService,
+    JWTBearerAuthenticationConfig,
+)
+
+jwt_config = JWTBearerAuthenticationConfig(
+    issuer="https://auth-server.com",
+    audience="your-api",
+)
+
+async def get_current_user(
+    token: str = Depends(JWTAuthenticationService),
+) -> str:
+    return token.sub
+```
+
+## Ory Kratos Integration
+
+```python
+from fastapi_factory_utilities.core.services.kratos import (
+    KratosIdentityGenericService,
+    KratosGenericWhoamiService,
+)
+
+# Identity management
+kratos_service = KratosIdentityGenericService(base_url="http://kratos:4434")
+identity = await kratos_service.get_identity(identity_id="...")
+
+# Session validation
+whoami_service = KratosGenericWhoamiService(base_url="http://kratos:4433")
+session = await whoami_service.whoami(cookie="...")
+```
+
+## Beanie Document Models
+
+```python
+# src/my_app/domain/entities/user.py
+from beanie import Document
+from pydantic import Field
+
+
+class UserDocument(Document):
+    """MongoDB user document."""
+    
+    email: str = Field(description="User email")
+    name: str = Field(description="User name")
+
+    class Settings:
+        name = "users"  # Collection name
+```
+
+Register in application:
+
+```python
+class MyApp(ApplicationAbstract):
+    ODM_DOCUMENT_MODELS: ClassVar[list[type[Document]]] = [UserDocument]
+```
+
+## API Routers
+
+```python
+# src/my_app/presentation/api/users.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/users", tags=["users"])
+
+@router.get("/{user_id}")
+async def get_user(user_id: str) -> dict:
+    ...
+```
+
+Include in application:
+
+```python
+class MyApp(ApplicationAbstract):
+    def configure(self) -> None:
+        from my_app.presentation.api.users import router
+        self.fastapi.include_router(router)
+```
+
+## Dependency Injection with FastAPI Depends
+
+Use FastAPI's `Depends` for clean dependency injection. Create typed dependency aliases for better readability and reusability.
+
+### Repository Dependencies
+
+```python
+# src/my_app/presentation/dependencies/repositories.py
+from typing import Annotated
+from fastapi import Depends
+
+from my_app.domain.ports import UserRepositoryPort
+from my_app.infrastructure.repositories import UserRepository
+
+def get_user_repository() -> UserRepositoryPort:
+    """Factory for user repository."""
+    return UserRepository()
+
+UserRepositoryDep = Annotated[UserRepositoryPort, Depends(get_user_repository)]
+```
+
+### UseCase Dependencies
+
+```python
+# src/my_app/presentation/dependencies/usecases.py
+from typing import Annotated
+from fastapi import Depends
+
+from my_app.application.usecases import CreateUserUseCase
+
+def get_create_user_usecase(
+    user_repo: UserRepositoryDep,
+) -> CreateUserUseCase:
+    """Factory with injected repository."""
+    return CreateUserUseCase(user_repo=user_repo)
+
+CreateUserUseCaseDep = Annotated[CreateUserUseCase, Depends(get_create_user_usecase)]
+```
+
+### Using Dependencies in Endpoints
+
+```python
+# src/my_app/presentation/api/users.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/users", tags=["users"])
+
+@router.post("/")
+async def create_user(
+    request: CreateUserRequest,
+    usecase: CreateUserUseCaseDep,
+) -> UserResponse:
+    """Endpoint with injected usecase."""
+    return usecase.execute(request.email)
+```
+
+### Testing with Dependency Overrides
+
+```python
+# tests/test_users.py
+from fastapi.testclient import TestClient
+
+def test_create_user(app: FastAPI):
+    # Override dependencies for testing
+    mock_repo = MockUserRepository()
+    app.dependency_overrides[get_user_repository] = lambda: mock_repo
+    
+    client = TestClient(app)
+    response = client.post("/users/", json={"email": "test@example.com"})
+    
+    assert response.status_code == 200
+    app.dependency_overrides.clear()
+```
+
+## Exceptions
+
+All exceptions must inherit from `FastAPIFactoryUtilitiesError`. This base class provides:
+
+- **Automatic logging** with configurable levels
+- **OpenTelemetry integration** for span recording and error tracing
+- **Custom attributes** via kwargs (propagated to spans)
+- **Default messages** extracted from docstrings
+
+**Source**: [fastapi_factory_utilities/core/exceptions.py](https://github.com/DeerHide/fastapi_factory_utilities/blob/main/src/fastapi_factory_utilities/core/exceptions.py)
+
+### Defining Custom Exceptions
+
+```python
+# src/my_app/domain/exceptions.py
+import logging
+from fastapi_factory_utilities.core.exceptions import FastAPIFactoryUtilitiesError
+
+
+class UserNotFoundError(FastAPIFactoryUtilitiesError):
+    """User was not found in the database."""
+
+    DEFAULT_LOGGING_LEVEL: int = logging.WARNING
+
+
+class InvalidCredentialsError(FastAPIFactoryUtilitiesError):
+    """Authentication failed due to invalid credentials."""
+
+    DEFAULT_LOGGING_LEVEL: int = logging.WARNING
+    FILTERED_ATTRIBUTES: tuple[str, ...] = ("password",)  # Never log sensitive data
+
+
+class PaymentFailedError(FastAPIFactoryUtilitiesError):
+    """Payment processing failed."""
+
+    DEFAULT_MESSAGE: str = "Payment could not be processed"
+    DEFAULT_LOGGING_LEVEL: int = logging.ERROR
+```
+
+### Raising Exceptions
+
+```python
+# Basic usage - message from docstring
+raise UserNotFoundError()
+# Logs: "User was not found in the database."
+
+# Custom message
+raise UserNotFoundError(message="User with ID '123' not found")
+# Logs: "User with ID '123' not found"
+
+# With custom attributes (propagated to OpenTelemetry spans)
+raise PaymentFailedError(
+    message="Payment declined",
+    user_id="user-123",
+    amount=99.99,
+    currency="USD",
+)
+# Span attributes: user_id, amount, currency, error.type, exception.*
+```
+
+### Exception Features
+
+| Feature | Description |
+|---------|-------------|
+| `DEFAULT_MESSAGE` | Fallback message if none provided |
+| `DEFAULT_LOGGING_LEVEL` | Log level (default: `logging.ERROR`) |
+| `FILTERED_ATTRIBUTES` | Kwargs to exclude from span attributes |
+| `message` | Instance message (auto-logged) |
+| `level` | Instance log level override |
+
+### OpenTelemetry Integration
+
+Exceptions automatically record to the current OpenTelemetry span:
+
+```python
+# All of these are set automatically on the active span:
+# - error.type: Exception class name
+# - exception.message: The error message
+# - exception.stacktrace: Full traceback
+# - exception.type: Exception class name
+# - Custom kwargs as span attributes
+```
+
+## Best Practices
+
+1. **Configuration**: Use `RootConfig` subclasses with frozen Pydantic models
+2. **Plugins**: Compose functionality through plugins, don't modify core
+3. **Documents**: Register all Beanie models in `ODM_DOCUMENT_MODELS`
+4. **Lifecycle**: Use `on_startup`/`on_shutdown` for resource management
+5. **Type Safety**: Always type all code, leverage Pydantic validation
+6. **Dependency Injection**: Use `Annotated` with `Depends` for clean, testable code
+7. **Exceptions**: Always inherit from `FastAPIFactoryUtilitiesError` for consistent logging and tracing
