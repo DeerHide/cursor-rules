@@ -4,7 +4,7 @@
 # Override agent name
 agent:
   metadata:
-    name: ""
+    name: "Analyst"
 
 # Replace entire persona (not merged)
 persona:
