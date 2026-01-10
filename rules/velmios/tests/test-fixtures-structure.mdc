@@ -1,0 +1,172 @@
+---
+description: Test Fixtures Structure
+globs: tests/**/*.py
+alwaysApply: true
+---
+# Test Fixtures Structure
+
+This document explains the organization and structure of test fixtures in the `tests/fixtures/` directory.
+
+## Principles
+
+The fixture structure follows the **Single Responsibility Principle** - each file has one clear, focused scope:
+
+- **One file = One responsibility**
+- Each file contains fixtures and utilities for a single domain or concern
+- Related fixtures are grouped together, but distinct concerns are separated
+
+## File Organization
+
+### Core Infrastructure Fixtures
+
+#### `mongodb.py`
+**Scope:** MongoDB container setup and database fixtures
+- `MongoDbFixture` - MongoDB container wrapper class
+- `mongodb` - Session-scoped MongoDB container fixture
+- `mongodb_database` - Function-scoped MongoDB database fixture
+- `database_name` - Unique database name generator fixture
+
+#### `redis.py`
+**Scope:** Redis container setup
+- `RedisFixture` - Redis container wrapper class
+- `redis_server` - Session-scoped Redis container fixture
+
+#### `rabbitmq.py`
+**Scope:** RabbitMQ container setup
+- `rabbitmq_container` - Session-scoped RabbitMQ container fixture
+- `vhost` - Function-scoped RabbitMQ vhost fixture
+
+### Plugin Configuration Fixtures
+
+#### `odm.py`
+**Scope:** ODM (Object Document Mapper) plugin configuration
+- `odm_plugin` - ODM plugin fixture for MongoDB document models
+
+#### `aiopika.py`
+**Scope:** Aiopika plugin configuration (RabbitMQ client)
+- `aiopika_plugin` - Aiopika plugin fixture with RabbitMQ connection
+- Helper functions: `create_vhost`, `cleanup_vhost`
+
+#### `taskiq.py`
+**Scope:** Taskiq plugin configuration (async task queue)
+- `taskiq_suffix_name` - Unique suffix name generator fixture
+- `taskiq_plugin` - Taskiq plugin fixture with Redis connection
+
+### Application Fixtures
+
+#### `configs.py`
+**Scope:** Application configuration fixtures
+- `self_information_config` - Self information configuration fixture
+- `root_config_provider` - Root application configuration provider fixture
+
+#### `applications.py`
+**Scope:** Application instance fixtures
+- `application_provider` - Application provider fixture
+- `application_for_integration_tests` - Pre-configured application for integration tests
+
+### Data and Repository Fixtures
+
+#### `repositories.py`
+**Scope:** In-memory repository implementations
+- `CustomerRepositoryInMemory` - In-memory customer repository
+- `RealmRepositoryInMemory` - In-memory realm repository
+
+#### `factories.py`
+**Scope:** Factory functions for creating test data
+- `create_registration_customer_params` - Factory for registration customer parameters
+
+#### `types.py`
+**Scope:** Type/value provider fixtures
+- `email_provider` - Email address provider fixture
+- `username_provider` - Username provider fixture
+- `country_provider` - Country code provider fixture
+
+## Usage Guidelines
+
+### Adding New Fixtures
+
+When adding new fixtures, follow these guidelines:
+
+1. **Identify the scope** - Determine which file the fixture belongs to based on its responsibility
+2. **Single responsibility** - If a fixture doesn't fit any existing file, consider if it needs a new file
+3. **Dependencies** - Be mindful of circular dependencies when importing between fixture files
+4. **Naming** - Use descriptive names that indicate the fixture's purpose
+5. **Import pattern** - Tests must use `fixtures.<module>` not `tests.fixtures.<module>` for imports
+
+### Import Patterns
+
+**Important:** Tests must **NOT** use `tests.fixtures` for direct imports. Instead, use `fixtures` directly.
+
+**Correct:**
+```python
+from fixtures.factories import create_registration_customer_params
+from fixtures.repositories import CustomerRepositoryInMemory
+```
+
+**Incorrect:**
+```python
+from tests.fixtures.factories import create_registration_customer_params  # ❌ Don't do this
+from tests.fixtures.repositories import CustomerRepositoryInMemory  # ❌ Don't do this
+```
+
+Fixtures are imported in `tests/conftest.py` and made available to all tests. The import structure in `conftest.py` follows the file organization:
+
+```python
+from .fixtures.<module> import fixture_name
+```
+
+### Fixture Scopes
+
+- **Session-scoped fixtures** - Created once per test session (e.g., containers)
+- **Function-scoped fixtures** - Created fresh for each test function (e.g., databases, plugins)
+
+## File Responsibility Matrix
+
+| File | Responsibility | Dependencies |
+|------|---------------|--------------|
+| `repositories.py` | In-memory repository implementations | None |
+| `factories.py` | Factory functions for test data creation | None |
+| `mongodb.py` | MongoDB container setup and database fixtures | None |
+| `odm.py` | ODM plugin configuration and fixtures | `mongodb.py` |
+| `configs.py` | Application configuration fixtures | `mongodb.py`, `redis.py` |
+| `applications.py` | Application instance fixtures | `configs.py`, `odm.py`, `aiopika.py`, `taskiq.py` |
+| `rabbitmq.py` | RabbitMQ container setup | None |
+| `aiopika.py` | Aiopika plugin configuration | `rabbitmq.py` |
+| `redis.py` | Redis container setup | None |
+| `taskiq.py` | Taskiq plugin configuration | `redis.py` |
+| `types.py` | Type/value provider fixtures | None |
+
+## Examples
+
+### Using Container Fixtures
+
+```python
+def test_with_mongodb(mongodb: MongoDbFixture):
+    connection_url = mongodb.get_connection_url()
+    # Use MongoDB connection
+```
+
+### Using Plugin Fixtures
+
+```python
+async def test_with_odm(odm_plugin: ODMPlugin):
+    # Use ODM plugin
+```
+
+### Using Factory Functions
+
+```python
+from fixtures.factories import create_registration_customer_params
+
+def test_registration(params = create_registration_customer_params()):
+    # Use factory-generated params
+```
+
+## Maintenance
+
+When refactoring fixtures:
+
+1. Ensure each file maintains a single responsibility
+2. Update imports in `tests/conftest.py` if moving fixtures
+3. Update this documentation if adding new files or changing structure
+4. Verify all fixtures are properly exported in `__all__` lists
