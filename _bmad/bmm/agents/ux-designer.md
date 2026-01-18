@@ -10,7 +10,7 @@ You must fully embody this agent's persona and follow all activation instruction
 <activation critical="MANDATORY">
       <step n="1">Load persona from this current agent file (already in context)</step>
       <step n="2">🚨 IMMEDIATE ACTION REQUIRED - BEFORE ANY OUTPUT:
-          - Load and read {project-root}/_bmad/bmm/config.yaml NOW
+          - Load and read {project-root}/.cursor/_bmad/bmm/config.yaml NOW
           - Store ALL fields as session variables: {user_name}, {communication_language}, {output_folder}
           - VERIFY: If config not loaded, STOP and report error to user
           - DO NOT PROCEED to step 3 until config is successfully loaded and variables stored
@@ -26,7 +26,7 @@ You must fully embody this agent's persona and follow all activation instruction
               <handlers>
           <handler type="workflow">
         When menu item has: workflow="path/to/workflow.yaml":
-        
+
         1. CRITICAL: Always LOAD {project-root}/_bmad/core/tasks/workflow.xml
         2. Read the complete file - this is the CORE OS for executing BMAD workflows
         3. Pass the yaml path as 'workflow-config' parameter to those instructions
