@@ -23,20 +23,7 @@ git submodule add https://github.com/DeerHide/cursor-rules.git .cursor-rules
 
 ## Contributing
 
-Contributions are welcome! If you have cursor rules that would benefit others:
-
-1. Fork this repository
-2. Create a new `.mdc` file in the appropriate category
-3. Follow the template structure (see `rules/template.mdc`)
-4. Submit a pull request
-
-### Guidelines
-
-- Keep rules clear and concise
-- Include practical examples
-- Organize by category (language/framework/general)
-- Add usage instructions
-- Test your rules before submitting
+Contributions are welcome! If you have cursor rules that would benefit others, take a look here: [CONTRIBUTING](CONTRIBUTING.md)
 
 ## License
 
