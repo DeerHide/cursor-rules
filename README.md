@@ -6,6 +6,8 @@ A repository of Cursor IDE rules (`.mdc` files) for software development, includ
 
 ## How to Use
 
+> **Warning**: If your project already contains a `.cursor` folder, **back it up before** using this repo (for example, rename it to `.cursor.backup`) so you can restore any existing settings or rules if needed.
+
 ### Option 1: Copy Individual Rules
 
 1. Browse the `rules/` directory
@@ -18,7 +20,10 @@ A repository of Cursor IDE rules (`.mdc` files) for software development, includ
 
 ```bash
 # In your project directory
-git submodule add https://github.com/DeerHide/cursor-rules.git .cursor-rules
+git submodule add https://github.com/DeerHide/cursor-rules.git .cursor
+
+# use the following to check whether the submodule is correctly initialized
+git submodule status
 ```
 
 ## Contributing
