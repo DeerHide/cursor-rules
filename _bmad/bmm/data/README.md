@@ -16,6 +16,7 @@ Template for project-specific brainstorming context. Used by:
 BMAD documentation standards and guidelines. Used by:
 
 - Tech Writer agent (critical action loading)
+- Product Content Writer agent (critical action loading; persona overrides tone/audience)
 - Various documentation workflows
 - Standards validation and review processes
 

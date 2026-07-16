@@ -18,7 +18,8 @@ Provides the **HOW** (universal knowledge) while agents provide the **WHAT** (do
 
 - Frame Expert (BMM): Technical flowcharts, architecture diagrams, wireframes
 - Presentation Master (CIS): Pitch decks, creative visuals, Rube Goldberg machines
-- Tech Writer (BMM): Documentation diagrams, concept explanations
+- Tech Writer (BMM): Technical documentation diagrams, concept explanations
+- Product Content Writer (BMM): User-journey and product-area diagrams for end-user content
 
 ## Files in This Directory
 

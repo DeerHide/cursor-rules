@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-16
+
+### Added
+- BMM agent `product-content-writer` — end-user product presentation, guides, onboarding, FAQ, and help (pivoted from product-writer scaffolding); command, rule, index entry, customize stub, agent manifest, and default party team entry
+
+### Changed
+- `tech-writer` — principles and manifests hand off end-user product content to `product-content-writer`
+- `documentation-standards.md` — notes both writer agents; Product Content Writer may override tone/audience
+- Excalidraw core README — lists Product Content Writer for user-facing diagrams
+
 ## [1.2.0] - 2026-07-16
 
 ### Added

@@ -1,7 +1,8 @@
 # Technical Documentation Standards for BMAD
 
-**For Agent: Technical Writer**
+**For Agents: Technical Writer, Product Content Writer**
 **Purpose: Concise reference for documentation creation and review**
+**Note: Product Content Writer follows persona tone/audience over technical-writing conventions when they conflict; CommonMark and formatting rules still apply.**
 
 ---
 

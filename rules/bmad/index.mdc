@@ -60,6 +60,7 @@ BMAD rules have been installed to: `.cursor/rules/bmad/`
 - @bmad/bmm/agents/architect - architect
 - @bmad/bmm/agents/dev - dev
 - @bmad/bmm/agents/pm - pm
+- @bmad/bmm/agents/product-content-writer - product-content-writer
 - @bmad/bmm/agents/quick-flow-solo-dev - quick-flow-solo-dev
 - @bmad/bmm/agents/sm - sm
 - @bmad/bmm/agents/tea - tea
