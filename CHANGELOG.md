@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-16
+
+### Added
+- Experimental basic scaffolding for C# / .NET rules under `_bmad/bmad-custom/csharp/` (mirrored in `_bmad/_config/custom/bmad-custom/csharp/`):
+  - `csharp.mdc` - project layout, tooling, conventions, and `dotnet` CLI
+  - `architecture.mdc` - Clean/Hexagonal Architecture with DI
+  - `testing.mdc` - xUnit and NSubstitute patterns
+
+### Changed
+- `README.md` - mention C# alongside Python
+- `CONTRIBUTING.md` - language packs now documented under `_bmad/bmad-custom/<lang>/`
+
 ## [1.1.0] - 2024-12-31
 
 ### Added
@@ -48,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT License
 - Basic README
 
-[Unreleased]: https://github.com/DeerHide/cursor-rules/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/DeerHide/cursor-rules/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/DeerHide/cursor-rules/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/DeerHide/cursor-rules/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DeerHide/cursor-rules/releases/tag/v1.0.0
 
