@@ -1,0 +1,187 @@
+---
+alwaysApply: true
+description: "Clean/Hexagonal Architecture patterns for C# with DI"
+tags: ["csharp", "architecture", "clean-architecture", "ddd", "di"]
+version: "1.0.0"
+---
+
+# Clean Architecture (C#)
+
+Use Clean/Hexagonal Architecture with 4 layers:
+
+```
+┌─────────────────────────────────────┐
+│        Presentation Layer           │  ← API, CLI, UI entry points
+├─────────────────────────────────────┤
+│        Application Layer            │  ← UseCases, Services
+├─────────────────────────────────────┤
+│          Domain Layer               │  ← Entities, business rules
+├─────────────────────────────────────┤
+│       Infrastructure Layer          │  ← Repositories, external APIs
+└─────────────────────────────────────┘
+```
+
+Dependencies point inward. Domain has no infrastructure references.
+
+## Domain Layer
+
+Core business logic: entities and value objects. Prefer immutable `record` types.
+
+### Entities
+
+Objects with identity.
+
+```csharp
+namespace MyApp.Domain.Entities;
+
+public sealed class User
+{
+    public Guid Id { get; }
+    public Email Email { get; }
+    public UserName Name { get; }
+
+    public User(Guid id, Email email, UserName name)
+    {
+        Id = id;
+        Email = email;
+        Name = name;
+    }
+}
+```
+
+### Value Objects
+
+Immutable, validated at construction.
+
+```csharp
+namespace MyApp.Domain.ValueObjects;
+
+public sealed record Email
+{
+    public string Value { get; }
+
+    public Email(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !value.Contains('@'))
+            throw new ArgumentException("Invalid email.", nameof(value));
+
+        Value = value.Trim();
+    }
+
+    public override string ToString() => Value;
+}
+
+public sealed record UserName
+{
+    public string Value { get; }
+
+    public UserName(string value)
+    {
+        if (value is null || value.Length is < 2 or > 100)
+            throw new ArgumentException("Name must be 2-100 characters.", nameof(value));
+
+        Value = value.Trim();
+    }
+
+    public override string ToString() => Value;
+}
+```
+
+```csharp
+// ✅ Good — typed value objects
+var user = new User(Guid.NewGuid(), new Email("john@example.com"), new UserName("John"));
+
+// ❌ Bad — raw strings with no validation
+var user = new User(Guid.NewGuid(), "john@example.com", "John");
+```
+
+## Application Layer
+
+UseCases orchestrate business logic; depend on ports (interfaces), not concrete infrastructure.
+
+```csharp
+namespace MyApp.Application.Ports;
+
+public interface IUserRepository
+{
+    Task<User> SaveAsync(User user, CancellationToken cancellationToken = default);
+    Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+}
+```
+
+```csharp
+namespace MyApp.Application.UseCases;
+
+public sealed class CreateUserUseCase(IUserRepository userRepository)
+{
+    public async Task<User> ExecuteAsync(
+        string email,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var user = new User(Guid.NewGuid(), new Email(email), new UserName(name));
+        return await userRepository.SaveAsync(user, cancellationToken);
+    }
+}
+```
+
+## Infrastructure Layer
+
+Implements ports for external systems (DB, APIs).
+
+```csharp
+namespace MyApp.Infrastructure.Repositories;
+
+public sealed class UserRepository : IUserRepository
+{
+    public Task<User> SaveAsync(User user, CancellationToken cancellationToken = default)
+    {
+        // Database implementation
+        throw new NotImplementedException();
+    }
+
+    public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+}
+```
+
+## Presentation Layer
+
+Entry points: API endpoints, CLI commands, UI. Thin — delegate to use cases.
+
+## Dependency Injection
+
+Use `Microsoft.Extensions.DependencyInjection`. Register abstractions, not concrete consumers wiring internals.
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+
+public static class ServiceCollectionExtensions
+{
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    {
+        services.AddScoped<CreateUserUseCase>();
+        return services;
+    }
+
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services)
+    {
+        services.AddScoped<IUserRepository, UserRepository>();
+        return services;
+    }
+}
+```
+
+```csharp
+// Composition root
+services.AddApplication();
+services.AddInfrastructure();
+```
+
+### DI Benefits
+
+- **Testability**: Replace implementations with fakes/mocks
+- **Flexibility**: Swap infrastructure without changing use cases
+- **Clarity**: Dependencies are explicit in constructors

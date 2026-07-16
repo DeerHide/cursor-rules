@@ -87,15 +87,21 @@ Rule content in Markdown format...
 
 ### Step 1: Choose the Right Directory
 
-- `src/software/` - Language-agnostic principles
-- `src/python/` - Python-specific patterns
-- Create new directories for other languages (e.g., `src/typescript/`)
+Language packs live under `_bmad/bmad-custom/<lang>/` (mirror the same files under `_bmad/_config/custom/bmad-custom/<lang>/`):
+
+- `_bmad/bmad-custom/software/` — Language-agnostic principles
+- `_bmad/bmad-custom/python/` — Python-specific patterns
+- `_bmad/bmad-custom/csharp/` — C# / .NET-specific patterns
+- Create new directories for other languages (e.g., `_bmad/bmad-custom/typescript/`)
+
+Project-specific rules (optional) live under `rules/<org>/<project>/`.
 
 ### Step 2: Create the Rule File
 
 ```bash
 # Example: Adding a new Python rule
-touch src/python/my-new-rule.mdc
+touch _bmad/bmad-custom/python/my-new-rule.mdc
+# Mirror under _bmad/_config/custom/bmad-custom/python/
 ```
 
 ### Step 3: Write the Content

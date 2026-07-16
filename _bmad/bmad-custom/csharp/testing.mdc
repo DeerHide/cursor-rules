@@ -1,0 +1,124 @@
+---
+alwaysApply: true
+description: "xUnit patterns, fixtures, and Clean Architecture testing for C#"
+tags: ["csharp", "testing", "xunit", "nsubstitute", "clean-architecture"]
+version: "1.0.0"
+---
+
+# C# Testing Best Practices
+
+Use **xUnit** with Clean Architecture testing strategies. Prefer **NSubstitute** for mocks.
+
+## Project Structure
+
+```
+tests/
+├── unit/
+│   └── MyApp.UnitTests/
+│       ├── Domain/
+│       │   ├── Entities/
+│       │   └── ValueObjects/
+│       └── Application/
+│           └── UseCases/
+└── integration/
+    └── MyApp.IntegrationTests/
+        └── Infrastructure/
+```
+
+Mirror `src/` layer structure under unit and integration test projects.
+
+## Testing by Layer
+
+### Domain Layer
+
+Pure unit tests. No mocks — entities and value objects are self-contained.
+
+```csharp
+public sealed class EmailTests
+{
+    [Fact]
+    public void Constructor_ValidEmail_SetsValue()
+    {
+        var email = new Email("user@example.com");
+        Assert.Equal("user@example.com", email.Value);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-an-email")]
+    public void Constructor_InvalidEmail_Throws(string value)
+    {
+        Assert.Throws<ArgumentException>(() => new Email(value));
+    }
+}
+```
+
+### Application Layer
+
+Unit tests with mocked ports (NSubstitute).
+
+```csharp
+using NSubstitute;
+
+public sealed class CreateUserUseCaseTests
+{
+    [Fact]
+    public async Task ExecuteAsync_ValidInput_SavesUser()
+    {
+        var repo = Substitute.For<IUserRepository>();
+        repo.SaveAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<User>());
+
+        var useCase = new CreateUserUseCase(repo);
+
+        var user = await useCase.ExecuteAsync("john@example.com", "John");
+
+        Assert.Equal("john@example.com", user.Email.Value);
+        await repo.Received(1).SaveAsync(
+            Arg.Is<User>(u => u.Email.Value == "john@example.com"),
+            Arg.Any<CancellationToken>());
+    }
+}
+```
+
+### Infrastructure Layer
+
+Integration tests against real dependencies when needed. Prefer Testcontainers for databases and other external services.
+
+Keep unit tests free of I/O, network, and real databases.
+
+## Naming
+
+Use `Method_Scenario_Expected` (or `Method_WhenX_ShouldY`):
+
+```csharp
+// ✅ Good
+public void GetById_WhenMissing_ReturnsNull() { }
+
+// ❌ Bad
+public void Test1() { }
+public void GetUserWorks() { }
+```
+
+## Commands
+
+```bash
+# All tests
+dotnet test
+
+# Specific project
+dotnet test tests/unit/MyApp.UnitTests
+
+# Filter by fully qualified name
+dotnet test --filter "FullyQualifiedName~CreateUserUseCase"
+
+# Filter by trait (when used)
+dotnet test --filter "Category=Unit"
+```
+
+## Guidelines
+
+- Unit tests: in-memory only, fast, isolated
+- One behavior per test; arrange–act–assert
+- Prefer `[Theory]` + `[InlineData]` over duplicated `[Fact]`s for input variants
+- Do not call real HTTP APIs or production databases from unit tests

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A repository of Cursor IDE rules (`.mdc` files) for software development, including the BMAD (Build, Manage, Architect, Deploy) methodology framework with agents, workflows, and tasks, plus Python and general software engineering good practices.
+A repository of Cursor IDE rules (`.mdc` files) for software development, including the BMAD (Build, Manage, Architect, Deploy) methodology framework with agents, workflows, and tasks, plus Python, C#, and general software engineering good practices.
 
 ## How to Use
 

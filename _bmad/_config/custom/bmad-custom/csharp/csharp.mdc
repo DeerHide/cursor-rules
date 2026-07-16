@@ -1,0 +1,111 @@
+---
+alwaysApply: true
+description: "Core C# / .NET project structure, tooling, and development conventions"
+tags: ["csharp", "dotnet", "editorconfig", "xunit"]
+version: "1.0.0"
+---
+
+# C# Project Rules
+
+## Project Structure
+
+```
+project/
+├── MyApp.sln                 # Solution file
+├── Directory.Build.props     # Shared MSBuild properties (optional)
+├── .editorconfig             # Style and analyzer settings
+├── src/
+│   └── MyApp/                # Application / library projects
+│       └── MyApp.csproj
+└── tests/
+    ├── unit/                 # Unit tests (in-memory, fast)
+    │   └── MyApp.UnitTests/
+    └── integration/          # Integration tests
+        └── MyApp.IntegrationTests/
+```
+
+Use SDK-style `.csproj` files. Enable nullable reference types and implicit usings.
+
+## Tools
+
+| Tool            | Purpose                    |
+|-----------------|----------------------------|
+| .NET SDK        | Build, restore, run, test  |
+| EditorConfig    | Formatting and naming      |
+| dotnet format   | Format and analyzer fixes  |
+| Roslyn analyzers| Compile-time quality       |
+| xUnit           | Testing                    |
+| git-cz          | Conventional commits       |
+
+## Conventions
+
+- **Nullable**: `<Nullable>enable</Nullable>` in all projects
+- **Namespaces**: Prefer file-scoped namespaces
+- **Public APIs**: XML documentation comments on public types and members
+- **Primary constructors**: Prefer when they simplify simple types
+- **Records**: Prefer for DTOs and value objects
+- **Boundaries**: Avoid `dynamic` and untyped `object` at API/domain boundaries
+
+```csharp
+// ✅ Good
+public sealed record UserId(Guid Value);
+
+public User? GetUser(UserId userId) => ...;
+
+// ❌ Bad
+public object GetUser(dynamic userId) => ...;
+```
+
+## Formatting and Analyzers
+
+Keep style in `.editorconfig`. After changes:
+
+```bash
+dotnet format
+dotnet build
+```
+
+Never suppress analyzer warnings without a documented justification.
+
+## Commits
+
+**Use git-cz (commitizen)** for conventional commit messages.
+
+```bash
+git cz
+# Or
+cz commit
+```
+
+Commit format: `<type>(<scope>): <description>`
+
+| Type     | Usage                        |
+|----------|------------------------------|
+| feat     | New feature                  |
+| fix      | Bug fix                      |
+| docs     | Documentation only           |
+| refactor | Code change (no fix/feature) |
+| test     | Adding/updating tests        |
+| chore    | Build, config, dependencies  |
+
+```bash
+# ✅ Good
+feat(auth): add JWT token refresh endpoint
+fix(user): resolve null reference on empty email
+test(payment): add integration tests for Stripe
+
+# ❌ Bad
+update code
+fixed stuff
+WIP
+```
+
+## Common Commands
+
+```bash
+dotnet restore
+dotnet build
+dotnet test
+dotnet format
+dotnet run --project src/MyApp
+```
